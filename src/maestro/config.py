@@ -14,7 +14,7 @@ class Settings:
     model: str
     base_url: str | None
     temperature: float = 0.2
-    max_steps: int = 8
+    max_steps: int = 15
 
     @classmethod
     def from_env(cls) -> "Settings":
