@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from maestro.core.agent import Agent, StopReason
+from maestro.core.agent import MAX_TOOL_OUTPUT_CHARS, TRUNCATION_NOTE, Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
 from maestro.llm.types import AssistantTurn, ToolCall
 from maestro.tools import Tool, ToolRegistry, ToolResult
@@ -46,6 +46,15 @@ class BrokenSensorTool(Tool):
 
     def run(self, **kwargs: Any) -> ToolResult:
         raise ConnectionError("sensor offline")
+
+
+class LongReportTool(Tool):
+    name = "read_report"
+    description = "Return a very long report."
+    parameters = {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: Any) -> ToolResult:
+        return ToolResult.success("x" * 10_000)
 
 
 def tool_turn(call_id: str, name: str, arguments: str) -> AssistantTurn:
@@ -112,6 +121,17 @@ def test_endless_tool_calls_stop_at_max_steps() -> None:
     assert result.steps == 3
     assert len(llm.received_messages) == 3
     assert "3 steps" in result.answer
+
+
+def test_long_tool_output_is_truncated_before_reaching_model() -> None:
+    llm = ScriptedLLM([tool_turn("call_1", "read_report", "{}"), final_turn("done")])
+
+    make_agent(llm, LongReportTool()).run("Read the report")
+
+    content = llm.received_messages[1][-1]["content"]
+    full_output = ToolResult.success("x" * 10_000).to_message()
+    assert content == f"{full_output[:MAX_TOOL_OUTPUT_CHARS]}\n{TRUNCATION_NOTE}"
+    assert len(content) == MAX_TOOL_OUTPUT_CHARS + len(TRUNCATION_NOTE) + 1
 
 
 def test_trace_file_contains_every_event(tmp_path: Path) -> None:

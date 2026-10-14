@@ -1,4 +1,5 @@
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -47,7 +48,9 @@ class Trace:
     def save(self, directory: str | Path = "runs") -> Path:
         target_directory = Path(directory)
         target_directory.mkdir(parents=True, exist_ok=True)
-        path = target_directory / f"trace_{datetime.now():%Y%m%d_%H%M%S}.json"
+        now = datetime.now()
+        filename = f"trace_{now:%Y%m%d_%H%M%S}_{now.microsecond // 1000:03d}_{secrets.token_hex(3)}.json"
+        path = target_directory / filename
         content = json.dumps([event.to_dict() for event in self._events], ensure_ascii=False, indent=2, default=str)
         path.write_text(content, encoding="utf-8")
         return path
