@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maestro"
+version = "0.1.0"
+description = "An AI agent that reads machine fault logs, searches maintenance manuals, and writes shift reports automatically"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "abdulrahim-ramadan", email = "Abdalrhim19991@gmail.com" }]
+dependencies = [
+    "openai>=1.40",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
