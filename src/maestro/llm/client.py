@@ -13,9 +13,15 @@ RETRYABLE_ERRORS = (RateLimitError, APIConnectionError, APITimeoutError)
 
 
 class LLMClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        openai_client: OpenAI | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self._settings = settings
-        self._client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+        self._client = openai_client or OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+        self._sleep = sleep
 
     def stream(
         self,
@@ -46,5 +52,5 @@ class LLMClient:
             except RETRYABLE_ERRORS:
                 if attempt == MAX_ATTEMPTS:
                     raise
-                time.sleep(2 ** (attempt - 1))
+                self._sleep(2 ** (attempt - 1))
         raise AssertionError("unreachable")
