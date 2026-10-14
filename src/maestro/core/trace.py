@@ -14,6 +14,7 @@ class EventKind(Enum):
     TOOL_RESULT = "tool_result"
     FINAL = "final"
     STOPPED = "stopped"
+    ERROR = "error"
 
 
 @dataclass(frozen=True)

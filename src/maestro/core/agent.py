@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,7 @@ class LLMLike(Protocol):
 class StopReason(Enum):
     FINAL_ANSWER = "final_answer"
     MAX_STEPS = "max_steps"
+    ERROR = "error"
 
 
 @dataclass
@@ -53,6 +55,16 @@ class Agent:
 
     def run(self, task: str) -> AgentResult:
         trace = Trace()
+        try:
+            answer, steps, stop_reason = self._loop(task, trace)
+        except Exception as error:
+            self._record_error(trace, error)
+            raise
+        finally:
+            trace_path = trace.save()
+        return AgentResult(answer, steps, stop_reason, trace_path)
+
+    def _loop(self, task: str, trace: Trace) -> tuple[str, int, StopReason]:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt},
             {"role": "user", "content": task},
@@ -66,14 +78,22 @@ class Agent:
 
             if not turn.has_tool_calls:
                 self._record(trace, step, EventKind.FINAL, {"answer": turn.content})
-                return AgentResult(turn.content, step, StopReason.FINAL_ANSWER, trace.save())
+                return turn.content, step, StopReason.FINAL_ANSWER
 
             for call in turn.tool_calls:
                 messages.append(self._execute(trace, step, call))
 
         answer = f"Stopped: reached the limit of {self._max_steps} steps without a final answer."
         self._record(trace, self._max_steps, EventKind.STOPPED, {"reason": answer})
-        return AgentResult(answer, self._max_steps, StopReason.MAX_STEPS, trace.save())
+        return answer, self._max_steps, StopReason.MAX_STEPS
+
+    def _record_error(self, trace: Trace, error: Exception) -> None:
+        step = trace.events[-1].step if trace.events else 0
+        payload = {"stop_reason": StopReason.ERROR.value, "error": f"{type(error).__name__}: {error}"}
+        event = trace.add(step, EventKind.ERROR, payload)
+        if self._on_event is not None:
+            with suppress(Exception):
+                self._on_event(event)
 
     def _execute(self, trace: Trace, step: int, call: ToolCall) -> dict[str, Any]:
         self._record(trace, step, EventKind.TOOL_CALL, {"id": call.id, "name": call.name, "arguments": call.arguments})

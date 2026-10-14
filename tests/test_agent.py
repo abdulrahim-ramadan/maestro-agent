@@ -12,7 +12,7 @@ from maestro.tools import Tool, ToolRegistry, ToolResult
 
 
 class ScriptedLLM:
-    def __init__(self, turns: list[AssistantTurn]) -> None:
+    def __init__(self, turns: list[AssistantTurn | Exception]) -> None:
         self._turns = turns
         self.received_messages: list[list[dict[str, Any]]] = []
 
@@ -23,7 +23,10 @@ class ScriptedLLM:
         on_token: Callable[[str], None] | None = None,
     ) -> AssistantTurn:
         self.received_messages.append(list(messages))
-        return self._turns[len(self.received_messages) - 1]
+        turn = self._turns[len(self.received_messages) - 1]
+        if isinstance(turn, Exception):
+            raise turn
+        return turn
 
 
 class AddNumbersTool(Tool):
@@ -153,3 +156,18 @@ def test_trace_file_contains_every_event(tmp_path: Path) -> None:
     ]
     assert saved == [event.to_dict() for event in emitted]
     assert [event.kind for event in emitted][-1] is EventKind.FINAL
+
+
+def test_failed_run_saves_trace_and_reraises(tmp_path: Path) -> None:
+    llm = ScriptedLLM([tool_turn("call_1", "add_numbers", '{"a": 2, "b": 3}'), RuntimeError("provider down")])
+    emitted: list[TraceEvent] = []
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        make_agent(llm, AddNumbersTool(), on_event=emitted.append).run("Add 2 and 3")
+
+    trace_files = list((tmp_path / "runs").glob("trace_*.json"))
+    assert len(trace_files) == 1
+    saved = json.loads(trace_files[0].read_text(encoding="utf-8"))
+    assert [event["kind"] for event in saved] == ["task", "assistant", "tool_call", "tool_result", "error"]
+    assert saved[-1]["payload"] == {"stop_reason": "error", "error": "RuntimeError: provider down"}
+    assert emitted[-1].kind is EventKind.ERROR
