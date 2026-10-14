@@ -28,6 +28,8 @@ class ToolRegistry:
             available = ", ".join(self.names()) or "none"
             return ToolResult.failure(f"unknown tool '{name}'; available tools: {available}")
 
+        if isinstance(raw_arguments, str) and not raw_arguments.strip():
+            raw_arguments = "{}"
         try:
             arguments = json.loads(raw_arguments)
         except (json.JSONDecodeError, TypeError):

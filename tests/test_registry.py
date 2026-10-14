@@ -22,6 +22,15 @@ class EchoTool(Tool):
         return ToolResult.success(text)
 
 
+class PingTool(Tool):
+    name = "ping"
+    description = "Answer with pong."
+    parameters = {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: Any) -> ToolResult:
+        return ToolResult.success("pong")
+
+
 @pytest.fixture
 def registry() -> ToolRegistry:
     registry = ToolRegistry()
@@ -66,6 +75,16 @@ def test_invalid_json(registry: ToolRegistry) -> None:
     result = registry.execute("echo", "{not json")
 
     assert result == ToolResult.failure("invalid JSON arguments")
+
+
+@pytest.mark.parametrize("raw_arguments", ["", "   ", "\n\t"])
+def test_empty_arguments_are_treated_as_empty_object(raw_arguments: str) -> None:
+    registry = ToolRegistry()
+    registry.register(PingTool())
+
+    result = registry.execute("ping", raw_arguments)
+
+    assert result == ToolResult.success("pong")
 
 
 def test_missing_required_parameter(registry: ToolRegistry) -> None:
