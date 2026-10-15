@@ -1,4 +1,5 @@
 import csv
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -66,6 +67,10 @@ class FaultLogRepository:
 
     def machine_ids(self) -> list[str]:
         return sorted({event.machine_id for event in self._events})
+
+
+def load_error_codes(json_path: str | Path) -> dict[str, dict[str, str]]:
+    return json.loads(Path(json_path).read_text(encoding="utf-8"))
 
 
 def downtime_minutes(events: Iterable[FaultEvent], shift_start: datetime, shift_end: datetime) -> float:

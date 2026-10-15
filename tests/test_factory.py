@@ -1,11 +1,13 @@
 import csv
+import json
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
+from maestro.tools import ToolRegistry
 from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
-from maestro.tools.factory_data import FaultEvent, FaultLogRepository, Severity, downtime_minutes
+from maestro.tools.factory_data import FaultEvent, FaultLogRepository, Severity, downtime_minutes, load_error_codes
 
 SHIFT_START = datetime(2026, 10, 14, 6, 0)
 SHIFT_END = datetime(2026, 10, 14, 14, 0)
@@ -111,6 +113,28 @@ def test_read_fault_log_returns_at_most_40_events(tmp_path: Path) -> None:
 
     assert len(result.data["events"]) == 40
     assert result.data["counts"] == {"info": 0, "warning": 45, "critical": 0}
+    assert result.data["total"] == 45
+    assert result.data["truncated"] is True
+
+
+def test_read_fault_log_not_truncated_below_limit(repository: FaultLogRepository) -> None:
+    result = ReadFaultLogTool(repository).run()
+
+    assert len(result.data["events"]) == 6
+    assert result.data["total"] == 6
+    assert result.data["truncated"] is False
+
+
+def test_null_optional_arguments_mean_no_filter(repository: FaultLogRepository) -> None:
+    registry = ToolRegistry()
+    registry.register(ReadFaultLogTool(repository))
+    registry.register(CalcDowntimeTool(repository))
+
+    read_result = registry.execute("read_fault_log", '{"machine_id": null, "severity": null}')
+    calc_result = registry.execute("calc_downtime", '{"machine_id": null}')
+
+    assert read_result.ok and read_result.data["total"] == 6
+    assert calc_result.ok and len(calc_result.data["machines"]) == 3
 
 
 def test_read_fault_log_rejects_unknown_severity(repository: FaultLogRepository) -> None:
@@ -127,6 +151,13 @@ def test_unknown_machine_lists_valid_ids(repository: FaultLogRepository, tool_cl
     assert not result.ok
     assert "ROB-99" in result.error
     assert "CNV-01, PRS-01, ROB-01" in result.error
+
+
+def test_load_error_codes(tmp_path: Path) -> None:
+    path = tmp_path / "error_codes.json"
+    path.write_text(json.dumps(ERROR_CODES), encoding="utf-8")
+
+    assert load_error_codes(path) == ERROR_CODES
 
 
 def test_lookup_known_code() -> None:

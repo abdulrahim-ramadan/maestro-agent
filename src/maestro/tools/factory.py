@@ -18,8 +18,8 @@ class ReadFaultLogTool(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "machine_id": {"type": "string", "description": "Machine ID, for example ROB-01"},
-            "severity": {"type": "string", "enum": [severity.value for severity in Severity]},
+            "machine_id": {"type": ["string", "null"], "description": "Machine ID, for example ROB-01; null for all machines"},
+            "severity": {"type": ["string", "null"], "enum": [*(severity.value for severity in Severity), None]},
         },
     }
 
@@ -39,7 +39,14 @@ class ReadFaultLogTool(Tool):
 
         events = self._repository.filter(machine_id=machine_id, severity=severity)
         counts = {value: sum(event.severity.value == value for event in events) for value in valid_severities}
-        return ToolResult.success({"events": [event.to_dict() for event in events[:MAX_EVENTS]], "counts": counts})
+        return ToolResult.success(
+            {
+                "events": [event.to_dict() for event in events[:MAX_EVENTS]],
+                "counts": counts,
+                "total": len(events),
+                "truncated": len(events) > MAX_EVENTS,
+            }
+        )
 
 
 class LookupErrorCodeTool(Tool):
@@ -73,7 +80,7 @@ class CalcDowntimeTool(Tool):
     )
     parameters = {
         "type": "object",
-        "properties": {"machine_id": {"type": "string", "description": "Machine ID; omit for all machines"}},
+        "properties": {"machine_id": {"type": ["string", "null"], "description": "Machine ID; omit or null for all machines"}},
     }
 
     def __init__(self, repository: FaultLogRepository) -> None:
