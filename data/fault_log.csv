@@ -1,0 +1,32 @@
+event_id,start_time,end_time,machine_id,error_code,severity,message
+EV-0001,2026-10-14 05:40:00,2026-10-14 06:25:00,PRS-01,E301,critical,"Hydraulic pressure low: machine stopped, maintenance called"
+EV-0002,2026-10-14 06:40:00,2026-10-14 07:09:00,CNV-01,E202,critical,"Part jam at transfer point: machine stopped, repaired by maintenance"
+EV-0003,2026-10-14 07:11:00,2026-10-14 07:46:00,PRS-01,E301,critical,"Hydraulic pressure low: machine stopped, repaired by maintenance"
+EV-0004,2026-10-14 07:50:00,2026-10-14 07:57:00,ROB-01,E102,warning,Weld current out of tolerance: cleared after visual check
+EV-0005,2026-10-14 07:51:00,2026-10-14 07:56:00,CNV-01,E201,warning,"Conveyor belt slip: operator acknowledged, auto-reset"
+EV-0006,2026-10-14 07:52:00,2026-10-14 07:52:00,SCR-01,E402,info,Screw feeder empty: operator notified
+EV-0007,2026-10-14 08:16:00,2026-10-14 08:16:00,PRS-01,E303,info,Die lubrication low: logged for next maintenance window
+EV-0008,2026-10-14 08:17:00,2026-10-14 08:17:00,ROB-01,E104,info,Tip dressing overdue: logged for next maintenance window
+EV-0009,2026-10-14 08:22:00,2026-10-14 08:48:00,CNV-01,E202,critical,"Part jam at transfer point: machine stopped, repaired by maintenance"
+EV-0010,2026-10-14 09:09:00,2026-10-14 09:16:00,ROB-01,E102,warning,Weld current out of tolerance: cleared after visual check
+EV-0011,2026-10-14 09:10:00,2026-10-14 09:40:00,ROB-01,E101,critical,"Wire feed jam: machine stopped, repaired by maintenance"
+EV-0012,2026-10-14 09:14:00,2026-10-14 09:17:00,CNV-01,E201,warning,Conveyor belt slip: cleared after visual check
+EV-0013,2026-10-14 09:14:00,2026-10-14 09:20:00,PRS-01,E302,warning,"Tonnage monitor deviation: operator acknowledged, auto-reset"
+EV-0014,2026-10-14 09:25:00,2026-10-14 09:55:00,ROB-01,E103,critical,"Torch collision detected: machine stopped, maintenance called"
+EV-0015,2026-10-14 09:36:00,2026-10-14 09:38:00,CNV-01,E203,warning,Drive motor overtemperature: cleared after visual check
+EV-0016,2026-10-14 09:36:00,2026-10-14 09:36:00,PRS-01,E303,info,Die lubrication low: logged for next maintenance window
+EV-0017,2026-10-14 09:55:00,2026-10-14 10:05:00,CNV-01,E203,warning,"Drive motor overtemperature: operator acknowledged, auto-reset"
+EV-0018,2026-10-14 10:33:00,2026-10-14 10:38:00,SCR-01,E401,warning,"Torque out of range: operator acknowledged, auto-reset"
+EV-0019,2026-10-14 10:47:00,2026-10-14 10:52:00,SCR-01,E401,warning,"Torque out of range: operator acknowledged, auto-reset"
+EV-0020,2026-10-14 10:55:00,2026-10-14 11:13:00,ROB-01,E103,critical,"Torch collision detected: machine stopped, maintenance called"
+EV-0021,2026-10-14 11:00:00,2026-10-14 11:08:00,ROB-02,E102,warning,Weld current out of tolerance: cleared after visual check
+EV-0022,2026-10-14 11:05:00,2026-10-14 11:30:00,ROB-02,E101,critical,"Wire feed jam: machine stopped, maintenance called"
+EV-0023,2026-10-14 11:09:00,2026-10-14 11:29:00,ROB-01,E103,critical,"Torch collision detected: machine stopped, repaired by maintenance"
+EV-0024,2026-10-14 11:38:00,2026-10-14 11:43:00,CNV-01,E201,warning,Conveyor belt slip: cleared after visual check
+EV-0025,2026-10-14 11:50:00,2026-10-14 11:57:00,SCR-01,E401,warning,Torque out of range: cleared after visual check
+EV-0026,2026-10-14 12:19:00,2026-10-14 12:25:00,CNV-01,E201,warning,Conveyor belt slip: cleared after visual check
+EV-0027,2026-10-14 12:19:00,2026-10-14 12:29:00,CNV-01,E203,warning,"Drive motor overtemperature: operator acknowledged, auto-reset"
+EV-0028,2026-10-14 12:54:00,2026-10-14 12:54:00,SCR-01,E402,info,Screw feeder empty: logged for next maintenance window
+EV-0029,2026-10-14 13:00:00,2026-10-14 13:02:00,CNV-01,E201,warning,Conveyor belt slip: cleared after visual check
+EV-0030,2026-10-14 13:17:00,2026-10-14 13:36:00,ROB-01,E101,critical,"Wire feed jam: machine stopped, repaired by maintenance"
+EV-0031,2026-10-14 13:28:00,2026-10-14 13:28:00,PRS-01,E303,info,Die lubrication low: logged for next maintenance window

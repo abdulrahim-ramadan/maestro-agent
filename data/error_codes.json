@@ -1,0 +1,74 @@
+{
+  "E101": {
+    "title": "Wire feed jam",
+    "category": "mechanical",
+    "likely_cause": "Worn feed rollers or kinked welding wire liner",
+    "severity": "critical"
+  },
+  "E102": {
+    "title": "Weld current out of tolerance",
+    "category": "process",
+    "likely_cause": "Dirty contact tip or unstable ground connection",
+    "severity": "warning"
+  },
+  "E103": {
+    "title": "Torch collision detected",
+    "category": "safety",
+    "likely_cause": "Part misplaced in fixture or drifted robot path",
+    "severity": "critical"
+  },
+  "E104": {
+    "title": "Tip dressing overdue",
+    "category": "maintenance",
+    "likely_cause": "Tip dresser cycle skipped or counter not reset",
+    "severity": "info"
+  },
+  "E201": {
+    "title": "Conveyor belt slip",
+    "category": "mechanical",
+    "likely_cause": "Low belt tension or worn drive pulley lagging",
+    "severity": "warning"
+  },
+  "E202": {
+    "title": "Part jam at transfer point",
+    "category": "mechanical",
+    "likely_cause": "Misaligned guide rail or deformed part carrier",
+    "severity": "critical"
+  },
+  "E203": {
+    "title": "Drive motor overtemperature",
+    "category": "electrical",
+    "likely_cause": "Blocked motor fan or sustained overload",
+    "severity": "warning"
+  },
+  "E301": {
+    "title": "Hydraulic pressure low",
+    "category": "hydraulic",
+    "likely_cause": "Leak in hydraulic line or worn pump",
+    "severity": "critical"
+  },
+  "E302": {
+    "title": "Tonnage monitor deviation",
+    "category": "process",
+    "likely_cause": "Incorrect die height or material thickness variation",
+    "severity": "warning"
+  },
+  "E303": {
+    "title": "Die lubrication low",
+    "category": "maintenance",
+    "likely_cause": "Lubricant reservoir below minimum level",
+    "severity": "info"
+  },
+  "E401": {
+    "title": "Torque out of range",
+    "category": "process",
+    "likely_cause": "Worn screwdriver bit or wrong screw batch",
+    "severity": "warning"
+  },
+  "E402": {
+    "title": "Screw feeder empty",
+    "category": "material",
+    "likely_cause": "Feeder bowl not refilled in time",
+    "severity": "info"
+  }
+}
