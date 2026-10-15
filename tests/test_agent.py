@@ -169,5 +169,6 @@ def test_failed_run_saves_trace_and_reraises(tmp_path: Path) -> None:
     assert len(trace_files) == 1
     saved = json.loads(trace_files[0].read_text(encoding="utf-8"))
     assert [event["kind"] for event in saved] == ["task", "assistant", "tool_call", "tool_result", "error"]
+    assert saved[-1]["step"] == 2
     assert saved[-1]["payload"] == {"stop_reason": "error", "error": "RuntimeError: provider down"}
     assert emitted[-1].kind is EventKind.ERROR
