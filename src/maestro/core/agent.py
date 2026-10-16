@@ -110,8 +110,13 @@ class Agent:
 
     def _record(self, trace: Trace, step: int, kind: EventKind, payload: dict[str, Any]) -> None:
         event = trace.add(step, kind, payload)
-        if self._on_event is not None:
+        if self._on_event is None:
+            return
+        try:
             self._on_event(event)
+        except Exception as error:
+            warning = {"warning": "on_event callback failed", "event_kind": kind.value, "error": f"{type(error).__name__}: {error}"}
+            trace.add(step, EventKind.WARNING, warning)
 
 
 def _truncate(text: str) -> str:

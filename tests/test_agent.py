@@ -172,3 +172,32 @@ def test_failed_run_saves_trace_and_reraises(tmp_path: Path) -> None:
     assert saved[-1]["step"] == 2
     assert saved[-1]["payload"] == {"stop_reason": "error", "error": "RuntimeError: provider down"}
     assert emitted[-1].kind is EventKind.ERROR
+
+
+def test_failing_on_event_does_not_stop_the_run() -> None:
+    llm = ScriptedLLM([tool_turn("call_1", "add_numbers", '{"a": 2, "b": 3}'), final_turn("5")])
+    calls: list[TraceEvent] = []
+
+    def broken_display(event: TraceEvent) -> None:
+        calls.append(event)
+        raise UnicodeEncodeError("charmap", " ", 0, 1, "character maps to <undefined>")
+
+    result = make_agent(llm, AddNumbersTool(), on_event=broken_display).run("Add 2 and 3")
+
+    assert result.answer == "5"
+    assert result.stop_reason is StopReason.FINAL_ANSWER
+    assert result.steps == 2
+    assert len(calls) == 6
+    saved = json.loads(result.trace_path.read_text(encoding="utf-8"))
+    kinds = [event["kind"] for event in saved]
+    assert kinds == [
+        "task", "warning",
+        "assistant", "warning",
+        "tool_call", "warning",
+        "tool_result", "warning",
+        "assistant", "warning",
+        "final", "warning",
+    ]
+    warning = saved[1]["payload"]
+    assert warning["event_kind"] == "task"
+    assert warning["error"].startswith("UnicodeEncodeError:")

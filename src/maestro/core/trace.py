@@ -15,6 +15,7 @@ class EventKind(Enum):
     FINAL = "final"
     STOPPED = "stopped"
     ERROR = "error"
+    WARNING = "warning"
 
 
 @dataclass(frozen=True)
