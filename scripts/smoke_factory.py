@@ -1,4 +1,5 @@
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,7 @@ def print_event(event: TraceEvent) -> None:
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
     settings = Settings.from_env()
     repository = FaultLogRepository(DATA_DIR / "fault_log.csv", SHIFT_START, SHIFT_END)
     registry = ToolRegistry()
