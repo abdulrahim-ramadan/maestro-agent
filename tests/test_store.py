@@ -57,6 +57,17 @@ def test_reindexing_adds_no_duplicates(store: ManualStore, manuals_dir: Path) ->
     assert len({(hit.source, hit.heading, hit.text) for hit in hits}) == 4
 
 
+def test_reindexing_removes_stale_chunks(store: ManualStore, manuals_dir: Path) -> None:
+    store.index(manuals_dir)
+    (manuals_dir / "welding_robot.md").write_text("# Welding Robot\n", encoding="utf-8")
+    (manuals_dir / "conveyor.md").unlink()
+
+    assert store.index(manuals_dir) == 1
+    hits = store.search("wire feed jam", k=10)
+
+    assert [(hit.source, hit.heading) for hit in hits] == [("welding_robot", "")]
+
+
 def test_search_filters_by_source(store: ManualStore, manuals_dir: Path) -> None:
     store.index(manuals_dir)
 

@@ -45,15 +45,29 @@ class MarkdownChunker:
         return [(heading, section) for heading, section in sections if section]
 
     def _split_by_size(self, section: str) -> list[str]:
-        if len(section) <= self._max_chars:
-            return [section]
-        step = self._max_chars - self._overlap
         pieces: list[str] = []
-        for start in range(0, len(section), step):
-            pieces.append(section[start : start + self._max_chars])
-            if start + self._max_chars >= len(section):
-                break
+        start = 0
+        while len(section) - start > self._max_chars:
+            end = self._last_break(section, start, start + self._max_chars)
+            pieces.append(section[start:end].rstrip())
+            start = self._next_start(section, start, end)
+        pieces.append(section[start:])
         return pieces
+
+    @staticmethod
+    def _last_break(section: str, start: int, limit: int) -> int:
+        for index in range(limit, start, -1):
+            if section[index].isspace():
+                return index
+        return limit
+
+    def _next_start(self, section: str, start: int, end: int) -> int:
+        candidate = max(end - self._overlap, start + 1)
+        while candidate < end and not section[candidate - 1].isspace():
+            candidate += 1
+        while candidate < len(section) and section[candidate].isspace():
+            candidate += 1
+        return candidate
 
 
 def _chunk_id(source: str, heading: str, position: int) -> str:

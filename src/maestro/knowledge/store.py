@@ -34,6 +34,10 @@ class ManualStore:
         chunks: list[Chunk] = []
         for path in sorted(Path(directory).glob("*.md")):
             chunks.extend(self._chunker.chunk_file(path))
+        current_ids = {chunk.id for chunk in chunks}
+        stale_ids = [chunk_id for chunk_id in self._collection.get(include=[])["ids"] if chunk_id not in current_ids]
+        if stale_ids:
+            self._collection.delete(ids=stale_ids)
         if chunks:
             self._collection.upsert(
                 ids=[chunk.id for chunk in chunks],

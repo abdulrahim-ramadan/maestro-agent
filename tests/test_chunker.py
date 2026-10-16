@@ -37,14 +37,39 @@ def test_long_section_respects_size_limit() -> None:
     assert all(chunk.heading == "Long Section" for chunk in chunks)
 
 
-def test_consecutive_chunks_overlap() -> None:
-    text = "## Numbers\n\n" + "".join(str(index % 10) for index in range(1000))
+def word_section(word_count: int) -> str:
+    return "## Words\n\n" + " ".join(f"w{index}" for index in range(word_count))
 
-    chunks = MarkdownChunker(max_chars=300, overlap=60).chunk_text(text, source="numbers")
+
+def test_consecutive_chunks_overlap() -> None:
+    chunks = MarkdownChunker(max_chars=300, overlap=60).chunk_text(word_section(400), source="words")
 
     for previous, current in zip(chunks, chunks[1:]):
-        assert previous.text[-60:] == current.text[:60]
-    assert "".join([chunks[0].text, *(chunk.text[60:] for chunk in chunks[1:])]) == text.strip()
+        previous_words = previous.text.split()
+        current_words = current.text.split()
+        shared = previous_words[previous_words.index(current_words[0]) :]
+        assert current_words[: len(shared)] == shared
+        assert len(" ".join(shared)) >= 60 - len(max(previous_words, key=len)) - 1
+
+
+def test_splits_only_at_whitespace() -> None:
+    text = word_section(400)
+    original_words = set(text.split())
+
+    chunks = MarkdownChunker(max_chars=250, overlap=40).chunk_text(text, source="words")
+
+    assert len(chunks) > 1
+    assert all(len(chunk.text) <= 250 for chunk in chunks)
+    assert all(word in original_words for chunk in chunks for word in chunk.text.split())
+    covered = [word for chunk in chunks for word in chunk.text.split()]
+    assert list(dict.fromkeys(covered)) == text.split()
+
+
+def test_word_longer_than_limit_is_cut_hard() -> None:
+    chunks = MarkdownChunker(max_chars=50, overlap=10).chunk_text("x" * 120, source="long_word")
+
+    assert all(len(chunk.text) <= 50 for chunk in chunks)
+    assert "".join(chunk.text for chunk in chunks) == "x" * 120
 
 
 def test_ids_are_stable_and_unique(tmp_path: Path) -> None:
