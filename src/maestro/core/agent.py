@@ -66,10 +66,12 @@ class Agent:
             answer, steps, stop_reason = self._loop(task, trace, progress)
         except Exception as error:
             self._record_error(trace, progress.step, error)
+            try:
+                trace.save()
+            except Exception as save_error:
+                error.add_note(f"saving the trace also failed: {type(save_error).__name__}: {save_error}")
             raise
-        finally:
-            trace_path = trace.save()
-        return AgentResult(answer, steps, stop_reason, trace_path)
+        return AgentResult(answer, steps, stop_reason, trace.save())
 
     def _loop(self, task: str, trace: Trace, progress: RunProgress) -> tuple[str, int, StopReason]:
         messages: list[dict[str, Any]] = [

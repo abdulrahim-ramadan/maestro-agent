@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from maestro.core.agent import EMPTY_REPLY_PROMPT, MAX_TOOL_OUTPUT_CHARS, TRUNCATION_NOTE, Agent, StopReason
-from maestro.core.trace import EventKind, TraceEvent
+from maestro.core.trace import EventKind, Trace, TraceEvent
 from maestro.llm.types import AssistantTurn, ToolCall
 from maestro.tools import Tool, ToolRegistry, ToolResult
 
@@ -221,3 +221,25 @@ def test_only_empty_replies_stop_at_max_steps() -> None:
     result = make_agent(llm, AddNumbersTool(), max_steps=3).run("Add 2 and 3")
 
     assert result.stop_reason is StopReason.MAX_STEPS
+
+
+def failing_save(self: Trace, directory: str | Path = "runs") -> Path:
+    raise PermissionError("runs is read-only")
+
+
+def test_trace_save_error_does_not_hide_the_original_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Trace, "save", failing_save)
+    llm = ScriptedLLM([RuntimeError("provider down")])
+
+    with pytest.raises(RuntimeError, match="provider down") as error_info:
+        make_agent(llm, AddNumbersTool()).run("Add 2 and 3")
+
+    assert error_info.value.__notes__ == ["saving the trace also failed: PermissionError: runs is read-only"]
+
+
+def test_trace_save_error_after_successful_run_is_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Trace, "save", failing_save)
+    llm = ScriptedLLM([final_turn("5")])
+
+    with pytest.raises(PermissionError, match="runs is read-only"):
+        make_agent(llm, AddNumbersTool()).run("Add 2 and 3")
