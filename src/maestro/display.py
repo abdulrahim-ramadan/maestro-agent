@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 
@@ -22,3 +23,7 @@ def redact_secrets(message: str) -> str:
     if len(api_key) >= MIN_REDACTED_KEY_CHARS:
         message = message.replace(api_key, REDACTED)
     return SECRET_PATTERN.sub(REDACTED, message)
+
+
+def wait_message(seconds: float, reason: str) -> str:
+    return f"waiting {math.ceil(seconds)} s for the rate limit ({reason})"

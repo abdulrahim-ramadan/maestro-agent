@@ -2,6 +2,9 @@
 maxUploadSize = 5
 showEmailPrompt = false
 
+[client]
+toolbarMode = "viewer"
+
 [theme]
 base = "dark"
 primaryColor = "#F59E0B"

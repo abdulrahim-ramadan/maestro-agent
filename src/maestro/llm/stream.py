@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from maestro.llm.types import AssistantTurn, ToolCall
+from maestro.llm.types import AssistantTurn, TokenUsage, ToolCall
 
 
 @dataclass
@@ -15,8 +15,12 @@ class StreamAccumulator:
     def __init__(self) -> None:
         self._text_parts: list[str] = []
         self._tool_calls: dict[int, _PartialToolCall] = {}
+        self.usage: TokenUsage | None = None
 
     def feed(self, chunk: Any) -> str:
+        usage = getattr(chunk, "usage", None)
+        if usage is not None:
+            self.usage = TokenUsage(prompt_tokens=usage.prompt_tokens, total_tokens=usage.total_tokens)
         if not chunk.choices:
             return ""
         delta = chunk.choices[0].delta

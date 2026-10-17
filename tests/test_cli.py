@@ -36,12 +36,15 @@ class FakeAgent:
         self._stop_reason = stop_reason
         self._error = error
         self.tasks: list[str] = []
+        self.on_wait: Callable[[float, str], None] | None = None
 
     def run(self, task: str) -> AgentResult:
         self.tasks.append(task)
         if self._error is not None:
             raise self._error
         trace = Trace()
+        if self.on_wait is not None:
+            self.on_wait(11.6, "token pacing")
         self._on_event(trace.add(1, EventKind.TOOL_CALL, {"id": "c1", "name": "lookup_error_code", "arguments": '{"codes": ["E101"]}'}))
         self._on_event(trace.add(1, EventKind.TOOL_RESULT, {"id": "c1", "name": "lookup_error_code", "ok": True, "content": "{}"}))
         for token in ["# Shift report\n\n", "## Summary\n", "All good."]:
@@ -57,11 +60,18 @@ class FakeAgentFactory:
         self.shifts: list[ShiftWindow] = []
 
     def __call__(
-        self, settings: Settings, log_path: Path, shift: ShiftWindow, on_token: Any = None, on_event: Any = None
+        self,
+        settings: Settings,
+        log_path: Path,
+        shift: ShiftWindow,
+        on_token: Any = None,
+        on_event: Any = None,
+        on_wait: Any = None,
     ) -> FakeAgent:
         self.log_paths.append(log_path)
         self.shifts.append(shift)
         agent = FakeAgent(on_token, on_event, **self._agent_options)
+        agent.on_wait = on_wait
         self.agents.append(agent)
         return agent
 
@@ -86,6 +96,7 @@ def test_report_saves_markdown_and_prints_summary(tmp_path: Path, capsys: pytest
     assert len(reports) == 1
     assert reports[0].read_text(encoding="utf-8") == REPORT + "\n"
     output = capsys.readouterr().out
+    assert "waiting 12 s for the rate limit (token pacing)" in output
     assert "✓ step 1  lookup_error_code" in output
     assert '{"codes":["E101"]}' in output
     assert "All good." in output

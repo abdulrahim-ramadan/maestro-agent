@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from maestro.llm.stream import StreamAccumulator
-from maestro.llm.types import AssistantTurn, ToolCall
+from maestro.llm.types import AssistantTurn, TokenUsage, ToolCall
 
 
 def text_chunk(text: str) -> SimpleNamespace:
@@ -81,3 +81,19 @@ def test_two_parallel_tool_calls() -> None:
         ToolCall(id="call_a", name="read_log", arguments='{"machine": "P3"}'),
         ToolCall(id="call_b", name="search_manual", arguments='{"query": "E-104"}'),
     ]
+
+
+def test_usage_from_the_final_chunk_is_kept() -> None:
+    accumulator = StreamAccumulator()
+    accumulator.feed(text_chunk("Hi"))
+    accumulator.feed(SimpleNamespace(choices=[], usage=SimpleNamespace(prompt_tokens=120, total_tokens=135)))
+
+    assert accumulator.usage == TokenUsage(prompt_tokens=120, total_tokens=135)
+    assert accumulator.result().content == "Hi"
+
+
+def test_usage_is_none_without_usage_chunk() -> None:
+    accumulator = StreamAccumulator()
+    accumulator.feed(text_chunk("Hi"))
+
+    assert accumulator.usage is None

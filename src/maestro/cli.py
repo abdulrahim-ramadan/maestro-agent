@@ -16,7 +16,7 @@ from maestro.app import CHROMA_DIR, DATA_DIR, MANUALS_DIR, PROJECT_DIR, build_ag
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
-from maestro.display import redact_secrets, short_arguments
+from maestro.display import redact_secrets, short_arguments, wait_message
 from maestro.knowledge.store import ManualStore
 from maestro.llm.client import QuotaExhaustedError
 from maestro.prompts import ReportLanguage, report_task
@@ -42,6 +42,9 @@ class LiveStepView:
             self._print_tool_line(event)
         elif event.kind is EventKind.ERROR:
             self._console.print(f"[red]✗ step {event.step}  run failed[/red]")
+
+    def on_wait(self, seconds: float, reason: str) -> None:
+        self._console.print(f"[yellow]… {escape(wait_message(seconds, reason))}[/yellow]", highlight=False)
 
     def on_token(self, text: str) -> None:
         if not self._streaming:
@@ -89,7 +92,9 @@ def run_report(args: argparse.Namespace, console: Console, agent_factory: AgentF
 
     language = ReportLanguage(args.lang)
     view = LiveStepView(console)
-    agent = agent_factory(Settings.from_env(), log_path, shift, on_token=view.on_token, on_event=view.on_event)
+    agent = agent_factory(
+        Settings.from_env(), log_path, shift, on_token=view.on_token, on_event=view.on_event, on_wait=view.on_wait
+    )
     console.print(f"[bold]Shift report[/bold] {shift.start:%Y-%m-%d %H:%M} to {shift.end:%Y-%m-%d %H:%M}, language: {language.value}")
 
     started = time.perf_counter()

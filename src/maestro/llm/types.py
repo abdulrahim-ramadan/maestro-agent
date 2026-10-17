@@ -3,6 +3,12 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    prompt_tokens: int
+    total_tokens: int
+
+
+@dataclass(frozen=True)
 class ToolCall:
     id: str
     name: str

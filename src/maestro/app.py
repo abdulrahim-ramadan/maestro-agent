@@ -5,7 +5,7 @@ from maestro.config import Settings
 from maestro.core.agent import Agent
 from maestro.core.trace import TraceEvent
 from maestro.knowledge.store import ManualStore
-from maestro.llm.client import LLMClient
+from maestro.llm.client import LLMClient, OnWait
 from maestro.prompts import SYSTEM_PROMPT
 from maestro.tools import ToolRegistry
 from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
@@ -45,7 +45,8 @@ def build_agent(
     shift: ShiftWindow,
     on_token: Callable[[str], None] | None = None,
     on_event: Callable[[TraceEvent], None] | None = None,
+    on_wait: OnWait | None = None,
 ) -> Agent:
     repository = FaultLogRepository(log_path, shift.start, shift.end)
     registry = build_registry(repository, load_error_codes(ERROR_CODES_PATH), open_manual_store())
-    return Agent(LLMClient(settings), registry, SYSTEM_PROMPT, settings.max_steps, on_token=on_token, on_event=on_event)
+    return Agent(LLMClient(settings, on_wait=on_wait), registry, SYSTEM_PROMPT, settings.max_steps, on_token=on_token, on_event=on_event)

@@ -7,7 +7,15 @@ import pytest
 from openai import APIConnectionError, RateLimitError
 
 from maestro.config import Settings
-from maestro.llm.client import MAX_RATE_LIMIT_WAIT_SECONDS, LLMClient, QuotaExhaustedError, retry_after_seconds
+from maestro.llm.client import (
+    HINT_WAIT_BUDGET_SECONDS,
+    MAX_HINT_RETRIES,
+    MAX_RATE_LIMIT_WAIT_SECONDS,
+    LLMClient,
+    QuotaExhaustedError,
+    retry_after_seconds,
+)
+from maestro.llm.pacing import TokenEstimator, TokenWindow
 
 REQUEST = httpx2.Request("POST", "https://llm.test/v1/chat/completions")
 MESSAGES = [{"role": "user", "content": "Hallo"}]
@@ -129,26 +137,37 @@ def test_retry_after_seconds_parses_provider_hint(message: str, seconds: float |
         assert hint is not None and hint[0] == pytest.approx(seconds)
 
 
-def test_short_hint_waits_that_long_and_retries_once() -> None:
-    fake = FakeOpenAI([hinted_rate_limit("7.5s"), iter([text_chunk("ok")])])
+def test_hint_wait_adds_half_a_second_and_retries() -> None:
+    fake = FakeOpenAI([hinted_rate_limit("577.5ms"), hinted_rate_limit("7.5s"), iter([text_chunk("ok")])])
     sleep = RecordingSleep()
 
     turn = make_client(fake, sleep).stream(MESSAGES)
 
     assert turn.content == "ok"
-    assert sleep.delays == [7.5]
-    assert len(fake.completions.requests) == 2
+    assert sleep.delays == pytest.approx([1.0775, 8.0])
+    assert len(fake.completions.requests) == 3
 
 
-def test_second_hinted_rate_limit_is_raised() -> None:
-    fake = FakeOpenAI([hinted_rate_limit("3s"), hinted_rate_limit("3s"), iter([text_chunk("never")])])
+def test_up_to_five_hint_retries_then_raise() -> None:
+    fake = FakeOpenAI([hinted_rate_limit("1s")] * 6 + [iter([text_chunk("never")])])
     sleep = RecordingSleep()
 
     with pytest.raises(RateLimitError):
         make_client(fake, sleep).stream(MESSAGES)
 
-    assert sleep.delays == [3]
-    assert len(fake.completions.requests) == 2
+    assert sleep.delays == [1.5] * MAX_HINT_RETRIES
+    assert len(fake.completions.requests) == MAX_HINT_RETRIES + 1
+
+
+def test_hint_retries_stop_at_the_total_wait_budget() -> None:
+    fake = FakeOpenAI([hinted_rate_limit("40s")] * 3 + [iter([text_chunk("never")])])
+    sleep = RecordingSleep()
+
+    with pytest.raises(RateLimitError):
+        make_client(fake, sleep).stream(MESSAGES)
+
+    assert sleep.delays == [40.5, 40.5]
+    assert sum(sleep.delays) <= HINT_WAIT_BUDGET_SECONDS
 
 
 def test_hint_at_the_limit_is_still_retried() -> None:
@@ -157,7 +176,7 @@ def test_hint_at_the_limit_is_still_retried() -> None:
 
     make_client(fake, sleep).stream(MESSAGES)
 
-    assert sleep.delays == [MAX_RATE_LIMIT_WAIT_SECONDS]
+    assert sleep.delays == [MAX_RATE_LIMIT_WAIT_SECONDS + 0.5]
 
 
 def test_long_hint_fails_fast_with_quota_message() -> None:
@@ -175,3 +194,121 @@ def test_default_openai_client_does_not_retry_on_its_own() -> None:
     client = LLMClient(Settings(api_key="test-key", model="test-model", base_url=None))
 
     assert client._client.max_retries == 0
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.delays: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.delays.append(seconds)
+        self.now += seconds
+
+
+def usage_chunk(prompt_tokens: int, total_tokens: int) -> SimpleNamespace:
+    return SimpleNamespace(choices=[], usage=SimpleNamespace(prompt_tokens=prompt_tokens, total_tokens=total_tokens))
+
+
+def paced_client(fake: FakeOpenAI, clock: FakeClock, tpm_limit: int | None = 8000, waits: list | None = None) -> LLMClient:
+    settings = Settings(api_key="test-key", model="test-model", base_url=None, tpm_limit=tpm_limit)
+    on_wait = (lambda seconds, reason: waits.append((seconds, reason))) if waits is not None else None
+    return LLMClient(settings, openai_client=fake, sleep=clock.sleep, clock=clock, on_wait=on_wait)
+
+
+def test_token_window_waits_until_old_requests_leave_the_window() -> None:
+    clock = FakeClock()
+    window = TokenWindow(8000, clock)
+    window.record(4495)
+    clock.now += 20
+    window.record(2000)
+
+    assert window.budget == 7200
+    assert window.wait_seconds(700) == 0
+    assert window.wait_seconds(3582) == pytest.approx(40.0)
+    clock.now += 40
+    assert window.wait_seconds(3582) == 0
+    assert window.used() == 2000
+
+
+def test_request_larger_than_the_budget_waits_for_an_empty_window() -> None:
+    clock = FakeClock()
+    window = TokenWindow(1000, clock)
+    window.record(500)
+    clock.now += 10
+
+    assert window.wait_seconds(5000) == pytest.approx(50.0)
+
+
+def test_estimator_starts_at_four_chars_per_token_and_learns_from_usage() -> None:
+    estimator = TokenEstimator()
+
+    assert estimator.estimate(4000) == 1000
+    estimator.learn(request_chars=4600, prompt_tokens=2000)
+    assert estimator.estimate(4600) == 2000
+
+
+def test_pacing_sleeps_before_a_request_that_would_exceed_the_limit() -> None:
+    clock = FakeClock()
+    big_message = [{"role": "user", "content": "x" * 14_000}]
+    fake = FakeOpenAI([iter([text_chunk("a"), usage_chunk(3500, 4495)]), iter([text_chunk("b"), usage_chunk(3600, 3700)])])
+    waits: list[tuple[float, str]] = []
+    client = paced_client(fake, clock, waits=waits)
+
+    client.stream(big_message)
+    clock.now += 5
+    client.stream(big_message)
+
+    assert clock.delays == pytest.approx([55.0])
+    assert waits == [(pytest.approx(55.0), "token pacing")]
+    assert all(request["stream_options"] == {"include_usage": True} for request in fake.completions.requests)
+
+
+def test_real_usage_replaces_the_estimate_in_the_window() -> None:
+    clock = FakeClock()
+    fake = FakeOpenAI([iter([text_chunk("a"), usage_chunk(100, 150)]), iter([text_chunk("b")])])
+    client = paced_client(fake, clock)
+
+    client.stream(MESSAGES)
+
+    assert client._window.used() == 150
+
+
+def test_no_pacing_and_no_stream_options_without_a_limit() -> None:
+    clock = FakeClock()
+    fake = FakeOpenAI([iter([text_chunk("a")]), iter([text_chunk("b")])])
+    client = paced_client(fake, clock, tpm_limit=None)
+
+    client.stream([{"role": "user", "content": "x" * 100_000}])
+    client.stream([{"role": "user", "content": "x" * 100_000}])
+
+    assert clock.delays == []
+    assert "stream_options" not in fake.completions.requests[0]
+
+
+def test_on_wait_reports_hint_waits() -> None:
+    clock = FakeClock()
+    fake = FakeOpenAI([hinted_rate_limit("11.5s"), iter([text_chunk("ok")])])
+    waits: list[tuple[float, str]] = []
+
+    paced_client(fake, clock, tpm_limit=None, waits=waits).stream(MESSAGES)
+
+    assert waits == [(12.0, "provider retry hint")]
+    assert clock.delays == [12.0]
+
+
+def test_failing_on_wait_does_not_stop_the_request() -> None:
+    clock = FakeClock()
+    fake = FakeOpenAI([hinted_rate_limit("1s"), iter([text_chunk("ok")])])
+    settings = Settings(api_key="test-key", model="test-model", base_url=None)
+
+    def broken_display(seconds: float, reason: str) -> None:
+        raise UnicodeEncodeError("charmap", "x", 0, 1, "broken console")
+
+    turn = LLMClient(settings, openai_client=fake, sleep=clock.sleep, clock=clock, on_wait=broken_display).stream(MESSAGES)
+
+    assert turn.content == "ok"
+    assert clock.delays == [1.5]
