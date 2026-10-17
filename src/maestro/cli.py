@@ -1,7 +1,6 @@
 import argparse
-import json
-import os
-import re
+import importlib.util
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -13,19 +12,17 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from maestro.app import CHROMA_DIR, DATA_DIR, MANUALS_DIR, build_agent
+from maestro.app import CHROMA_DIR, DATA_DIR, MANUALS_DIR, PROJECT_DIR, build_agent
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
+from maestro.display import redact_secrets, short_arguments
 from maestro.knowledge.store import ManualStore
 from maestro.llm.client import QuotaExhaustedError
 from maestro.prompts import ReportLanguage, report_task
 from maestro.tools.factory_data import FaultLogError, ShiftWindow
 
-MAX_ARGUMENT_CHARS = 70
-SECRET_PATTERN = re.compile(r"(?:sk-|gsk_|AIza)[\w*\-]+")
-API_KEY_VARIABLE = "LLM_API_KEY"
-MIN_REDACTED_KEY_CHARS = 8
+UI_SCRIPT = Path(__file__).with_name("ui.py")
 DEFAULT_SHIFT_START = "06:00"
 DEFAULT_SHIFT_END = "14:00"
 
@@ -59,17 +56,9 @@ class LiveStepView:
 
     def _print_tool_line(self, event: TraceEvent) -> None:
         icon = "[green]✓[/green]" if event.payload["ok"] else "[red]✗[/red]"
-        arguments = escape(_short_arguments(self._arguments.pop(event.payload["id"], "")))
+        arguments = escape(short_arguments(self._arguments.pop(event.payload["id"], "")))
         name = escape(event.payload["name"])
         self._console.print(f"{icon} step {event.step}  [bold]{name}[/bold]  [dim]{arguments}[/dim]", highlight=False)
-
-
-def _short_arguments(raw_arguments: str) -> str:
-    try:
-        text = json.dumps(json.loads(raw_arguments or "{}"), ensure_ascii=False, separators=(",", ":"))
-    except json.JSONDecodeError:
-        text = raw_arguments
-    return text if len(text) <= MAX_ARGUMENT_CHARS else text[: MAX_ARGUMENT_CHARS - 3] + "..."
 
 
 def save_report(report: str, out_dir: str | Path, language: ReportLanguage) -> Path:
@@ -133,6 +122,16 @@ def run_index(console: Console) -> int:
     return 0
 
 
+def run_ui(console: Console) -> int:
+    if importlib.util.find_spec("streamlit") is None:
+        console.print('[bold red]Streamlit is not installed.[/bold red] Run: pip install -e ".\\[ui]"', highlight=False)
+        return 1
+    try:
+        return subprocess.run([sys.executable, "-m", "streamlit", "run", str(UI_SCRIPT)], cwd=PROJECT_DIR, check=False).returncode
+    except KeyboardInterrupt:
+        return 0
+
+
 def _clock_time(value: str) -> clock_time:
     try:
         return datetime.strptime(value, "%H:%M").time()
@@ -152,14 +151,12 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--shift-end", type=_clock_time, default=DEFAULT_SHIFT_END, help="shift end as HH:MM")
 
     commands.add_parser("index", help="build or refresh the maintenance manual index")
+    commands.add_parser("ui", help="start the Streamlit web interface")
     return parser
 
 
 def _redact(message: str) -> str:
-    api_key = os.environ.get(API_KEY_VARIABLE, "").strip()
-    if len(api_key) >= MIN_REDACTED_KEY_CHARS:
-        message = message.replace(api_key, "<redacted>")
-    return escape(SECRET_PATTERN.sub("<redacted>", message))
+    return escape(redact_secrets(message))
 
 
 def main(argv: Sequence[str] | None = None, agent_factory: AgentFactory = build_agent) -> int:
@@ -170,6 +167,8 @@ def main(argv: Sequence[str] | None = None, agent_factory: AgentFactory = build_
     try:
         if args.command == "index":
             return run_index(console)
+        if args.command == "ui":
+            return run_ui(console)
         return run_report(args, console, agent_factory)
     except ConfigError as error:
         console.print(f"[bold red]Configuration error:[/bold red] {_redact(str(error))}", highlight=False)

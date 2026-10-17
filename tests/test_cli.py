@@ -1,13 +1,14 @@
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import openai
 import pytest
 
-from maestro import app, cli
+from maestro import app, cli, display
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import AgentResult, StopReason
 from maestro.core.trace import EventKind, Trace
@@ -131,9 +132,9 @@ def test_api_error_prints_message_without_key(capsys: pytest.CaptureFixture[str]
 
 
 def test_short_arguments_are_truncated() -> None:
-    text = cli._short_arguments('{"queries": ["' + "x" * 200 + '"]}')
+    text = display.short_arguments('{"queries": ["' + "x" * 200 + '"]}')
 
-    assert len(text) == cli.MAX_ARGUMENT_CHARS
+    assert len(text) == display.MAX_ARGUMENT_CHARS
     assert text.endswith("...")
 
 
@@ -262,3 +263,38 @@ def test_out_path_that_is_a_file_exits_1_before_the_agent_runs(tmp_path: Path, c
     assert exit_code == 1
     assert factory.agents == []
     assert "Output path is not a directory: reports.txt" in capsys.readouterr().out
+
+
+class RecordingRun:
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def __call__(self, command: list[str], cwd: Path, check: bool) -> SimpleNamespace:
+        self.calls.append((command, cwd))
+        return SimpleNamespace(returncode=0)
+
+
+def test_ui_command_starts_streamlit_from_the_project_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = RecordingRun()
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(cli.subprocess, "run", run)
+
+    exit_code = cli.main(["ui"])
+
+    assert exit_code == 0
+    command, cwd = run.calls[0]
+    assert command[1:4] == ["-m", "streamlit", "run"]
+    assert Path(command[4]) == app.PROJECT_DIR / "src" / "maestro" / "ui.py"
+    assert cwd == app.PROJECT_DIR
+
+
+def test_ui_command_without_streamlit_explains_how_to_install(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    run = RecordingRun()
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(cli.subprocess, "run", run)
+
+    exit_code = cli.main(["ui"])
+
+    assert exit_code == 1
+    assert run.calls == []
+    assert 'Streamlit is not installed. Run: pip install -e ".[ui]"' in capsys.readouterr().out

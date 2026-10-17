@@ -89,6 +89,15 @@ maestro report --lang en
 
 Options: `--lang en|de`, `--log <csv>`, `--out <dir>`, `--shift-start HH:MM`, `--shift-end HH:MM`.
 
+## Web interface
+
+```bash
+pip install -e ".[ui]"
+maestro ui
+```
+
+A Streamlit page with fault log upload (or the sample data), shift times and language. It shows the agent steps live, streams the report, then renders it with a downtime chart and a download button. Each report uses about 35k tokens of the provider's daily quota.
+
 ## Tests
 
 ```bash
