@@ -98,6 +98,15 @@ maestro ui
 
 A Streamlit page with fault log upload (or the sample data), shift times and language. It shows the agent steps live, streams the report, then renders it with a downtime chart and a download button. Each report uses about 35k tokens of the provider's daily quota.
 
+## For shift leads
+
+1. Double-click `start_maestro.bat` in the Maestro folder. Your browser opens Maestro after a few seconds; keep the black window open while you work.
+2. Upload the fault log (CSV) in the sidebar.
+3. Choose the shift start and end and the report language.
+4. Click **Generate report**, then read or download the report.
+
+If the window shows an error, send its text to IT. The one-time setup is described under Quick Start and Web interface.
+
 ## Tests
 
 ```bash

@@ -1,5 +1,6 @@
 [server]
 maxUploadSize = 5
+showEmailPrompt = false
 
 [theme]
 base = "dark"
