@@ -4,7 +4,8 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
-from datetime import datetime, time as clock_time
+from datetime import datetime
+from datetime import time as clock_time
 from pathlib import Path
 
 from openai import APIError

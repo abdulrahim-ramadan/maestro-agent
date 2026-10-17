@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from maestro.tools import ToolRegistry
-from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
+from maestro.tools.factory import (
+    CalcDowntimeTool,
+    LookupErrorCodeTool,
+    ReadFaultLogTool,
+)
 from maestro.tools.factory_data import (
     FaultEvent,
     FaultLogRepository,

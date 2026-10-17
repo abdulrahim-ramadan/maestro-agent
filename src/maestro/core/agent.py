@@ -68,7 +68,8 @@ class Agent:
             self._record_error(trace, progress.step, error)
             try:
                 trace.save()
-            except Exception as save_error:
+            # A failing trace save must not hide the original error.
+            except Exception as save_error:  # noqa: BLE001
                 error.add_note(f"saving the trace also failed: {type(save_error).__name__}: {save_error}")
             raise
         return AgentResult(answer, steps, stop_reason, trace.save())
@@ -122,7 +123,8 @@ class Agent:
             return
         try:
             self._on_event(event)
-        except Exception as error:
+        # A broken display must never stop a run.
+        except Exception as error:  # noqa: BLE001
             warning = {"warning": "on_event callback failed", "event_kind": kind.value, "error": f"{type(error).__name__}: {error}"}
             trace.add(step, EventKind.WARNING, warning)
 

@@ -8,7 +8,11 @@ from maestro.knowledge.store import ManualStore
 from maestro.llm.client import LLMClient, OnWait
 from maestro.prompts import SYSTEM_PROMPT
 from maestro.tools import ToolRegistry
-from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
+from maestro.tools.factory import (
+    CalcDowntimeTool,
+    LookupErrorCodeTool,
+    ReadFaultLogTool,
+)
 from maestro.tools.factory_data import FaultLogRepository, ShiftWindow, load_error_codes
 from maestro.tools.manuals import ManualSearcher, SearchManualsTool
 

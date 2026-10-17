@@ -1,14 +1,15 @@
+import math
 from dataclasses import dataclass
 from datetime import datetime, time
-from enum import Enum
+from enum import Enum, auto
 from pathlib import Path
 
 from openai import APIError, RateLimitError
 
 from maestro.config import ConfigError
 from maestro.core.trace import EventKind, TraceEvent
-from maestro.display import redact_secrets, short_arguments, wait_message
-from maestro.llm.client import QuotaExhaustedError
+from maestro.display import redact_secrets, short_arguments
+from maestro.llm.client import QuotaExhaustedError, WaitReason
 from maestro.prompts import ReportLanguage
 from maestro.tools.factory import CalcDowntimeTool
 from maestro.tools.factory_data import (
@@ -17,19 +18,21 @@ from maestro.tools.factory_data import (
     ShiftWindow,
     load_fault_events,
 )
-
-RATE_LIMIT_SUMMARY = "The AI service limit was reached. Wait one minute and try again."
-QUOTA_SUMMARY = "Today's quota is used up. Try again tomorrow."
+from maestro.ui_texts import Text, t
 
 
 class StepStatus(Enum):
-    RUNNING = "running"
-    OK = "ok"
-    FAILED = "failed"
+    RUNNING = auto()
+    OK = auto()
+    FAILED = auto()
 
     @property
     def icon(self) -> str:
-        return {"running": "⏳", "ok": "✅", "failed": "❌"}[self.value]
+        return STEP_ICONS[self]
+
+
+STEP_ICONS = {StepStatus.RUNNING: "⏳", StepStatus.OK: "✅", StepStatus.FAILED: "❌"}
+WAIT_REASON_TEXTS = {WaitReason.PACING.value: Text.WAIT_REASON_PACING, WaitReason.RETRY_HINT.value: Text.WAIT_REASON_RETRY_HINT}
 
 
 @dataclass
@@ -39,9 +42,9 @@ class StepRow:
     arguments: str
     status: StepStatus
 
-    def to_markdown(self) -> str:
+    def to_markdown(self, lang: ReportLanguage) -> str:
         arguments = self.arguments.replace("`", "'")
-        return f"{self.status.icon} step {self.step} **{self.tool}** `{arguments}`"
+        return t(Text.STEP_LINE, lang, icon=self.status.icon, step=self.step, tool=self.tool, arguments=arguments)
 
 
 @dataclass(frozen=True)
@@ -49,8 +52,10 @@ class WaitNotice:
     seconds: float
     reason: str
 
-    def to_markdown(self) -> str:
-        return f"🕒 {wait_message(self.seconds, self.reason)}"
+    def to_markdown(self, lang: ReportLanguage) -> str:
+        reason_text = WAIT_REASON_TEXTS.get(self.reason)
+        reason = t(reason_text, lang) if reason_text is not None else self.reason
+        return t(Text.WAIT_LINE, lang, seconds=math.ceil(self.seconds), reason=reason)
 
 
 class StepTracker:
@@ -78,15 +83,27 @@ class StepTracker:
     def rows(self) -> list[StepRow]:
         return [entry for entry in self._entries if isinstance(entry, StepRow)]
 
-    def to_markdown(self) -> str:
-        return "\n\n".join(entry.to_markdown() for entry in self._entries)
+    def to_markdown(self, lang: ReportLanguage) -> str:
+        return "\n\n".join(entry.to_markdown(lang) for entry in self._entries)
+
+
+class LogSource(Enum):
+    UPLOAD = auto()
+    SAMPLE = auto()
+
+
+LOG_SOURCE_TEXTS = {LogSource.UPLOAD: Text.SOURCE_UPLOAD, LogSource.SAMPLE: Text.SOURCE_SAMPLE}
+
+
+def log_source_label(source: LogSource, lang: ReportLanguage) -> str:
+    return t(LOG_SOURCE_TEXTS[source], lang)
 
 
 class ShiftPreset(Enum):
-    EARLY = "Frühschicht"
-    LATE = "Spätschicht"
-    NIGHT = "Nachtschicht"
-    CUSTOM = "Custom"
+    EARLY = auto()
+    LATE = auto()
+    NIGHT = auto()
+    CUSTOM = auto()
 
 
 SHIFT_PRESET_TIMES = {
@@ -94,13 +111,20 @@ SHIFT_PRESET_TIMES = {
     ShiftPreset.LATE: (time(14, 0), time(22, 0)),
     ShiftPreset.NIGHT: (time(22, 0), time(6, 0)),
 }
+SHIFT_PRESET_TEXTS = {
+    ShiftPreset.EARLY: Text.SHIFT_EARLY,
+    ShiftPreset.LATE: Text.SHIFT_LATE,
+    ShiftPreset.NIGHT: Text.SHIFT_NIGHT,
+    ShiftPreset.CUSTOM: Text.SHIFT_CUSTOM,
+}
+CLOCK_FORMAT = "%H:%M"
 
 
-def preset_label(preset: ShiftPreset) -> str:
+def preset_label(preset: ShiftPreset, lang: ReportLanguage) -> str:
     if preset is ShiftPreset.CUSTOM:
-        return preset.value
+        return t(Text.SHIFT_CUSTOM, lang)
     start, end = SHIFT_PRESET_TIMES[preset]
-    return f"{preset.value} {start:%H:%M}–{end:%H:%M}"
+    return t(SHIFT_PRESET_TEXTS[preset], lang, start=start.strftime(CLOCK_FORMAT), end=end.strftime(CLOCK_FORMAT))
 
 
 def shift_times(preset: ShiftPreset, custom_start: time, custom_end: time) -> tuple[time, time]:
@@ -115,6 +139,22 @@ class LogPreview:
     last_event: datetime
     events_in_shift: int
     shift: ShiftWindow
+
+    @property
+    def shift_is_empty(self) -> bool:
+        return self.events_in_shift == 0
+
+    def details(self, lang: ReportLanguage) -> str:
+        date_format = t(Text.DATE_TIME_FORMAT, lang)
+        return t(
+            Text.PREVIEW_DETAILS,
+            lang,
+            machines=", ".join(self.machine_ids),
+            first=self.first_event.strftime(date_format),
+            last=self.last_event.strftime(date_format),
+            start=self.shift.start.strftime(date_format),
+            end=self.shift.end.strftime(date_format),
+        )
 
 
 def preview_log(log_path: str | Path, start_time: time, end_time: time) -> LogPreview:
@@ -131,14 +171,21 @@ def preview_log(log_path: str | Path, start_time: time, end_time: time) -> LogPr
     )
 
 
+def can_generate(preview: LogPreview | None, empty_report_confirmed: bool) -> bool:
+    return preview is not None and (not preview.shift_is_empty or empty_report_confirmed)
+
+
 def downtime_by_machine(log_path: str | Path, shift: ShiftWindow) -> dict[str, float]:
     repository = FaultLogRepository(log_path, shift.start, shift.end)
     machines = CalcDowntimeTool(repository).run().data["machines"]
     return {machine["machine_id"]: machine["downtime_minutes"] for machine in machines}
 
 
+FILE_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+
+
 def report_file_name(language: ReportLanguage, created_at: datetime) -> str:
-    return f"shift_report_{created_at:%Y%m%d_%H%M%S}_{language.value}.md"
+    return t(Text.REPORT_FILE_NAME, language, timestamp=created_at.strftime(FILE_TIMESTAMP_FORMAT))
 
 
 @dataclass(frozen=True)
@@ -147,20 +194,19 @@ class ErrorMessage:
     details: str | None = None
 
 
-def describe_error(error: Exception) -> ErrorMessage:
+def describe_error(error: Exception, lang: ReportLanguage) -> ErrorMessage:
     message = redact_secrets(str(error))
+    error_type = type(error).__name__
     if isinstance(error, RateLimitError):
-        return ErrorMessage(RATE_LIMIT_SUMMARY, f"{type(error).__name__}: {message}")
+        return ErrorMessage(t(Text.RATE_LIMIT_SUMMARY, lang), f"{error_type}: {message}")
     if isinstance(error, QuotaExhaustedError):
-        return ErrorMessage(QUOTA_SUMMARY, f"{type(error).__name__}: {message}")
+        return ErrorMessage(t(Text.QUOTA_SUMMARY, lang), f"{error_type}: {message}")
     if isinstance(error, ConfigError):
-        label = "Configuration error"
-    elif isinstance(error, FaultLogError):
-        label = "Fault log error"
-    elif isinstance(error, APIError):
-        label = f"API error ({type(error).__name__})"
-    elif isinstance(error, ValueError):
-        label = "Invalid input"
-    else:
-        label = f"Unexpected error ({type(error).__name__})"
-    return ErrorMessage(f"{label}: {message}")
+        return ErrorMessage(t(Text.CONFIG_ERROR, lang, message=message))
+    if isinstance(error, FaultLogError):
+        return ErrorMessage(t(Text.FAULT_LOG_ERROR, lang, message=message))
+    if isinstance(error, APIError):
+        return ErrorMessage(t(Text.API_ERROR, lang, error_type=error_type, message=message))
+    if isinstance(error, ValueError):
+        return ErrorMessage(t(Text.INVALID_INPUT, lang, message=message))
+    return ErrorMessage(t(Text.UNEXPECTED_ERROR, lang, error_type=error_type, message=message))

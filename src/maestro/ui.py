@@ -17,48 +17,66 @@ from maestro.tools.factory_data import ShiftWindow
 from maestro.ui_model import (
     ErrorMessage,
     LogPreview,
+    LogSource,
     ShiftPreset,
     StepTracker,
+    can_generate,
     describe_error,
     downtime_by_machine,
+    log_source_label,
     preset_label,
     preview_log,
     report_file_name,
     shift_times,
 )
+from maestro.ui_texts import (
+    DEFAULT_LANGUAGE_CHOICE,
+    LANGUAGE_CHOICES,
+    LANGUAGE_TOGGLE_LABEL,
+    Text,
+    report_language_for,
+    t,
+)
 
 LOGO_PATH = PROJECT_DIR / "docs" / "logo.png"
 SAMPLE_LOG = DATA_DIR / "fault_log.csv"
 UPLOAD_FILE_NAME = "uploaded_fault_log.csv"
-QUOTA_NOTE = "About 5 reports per day are possible on the free plan."
-SOURCE_UPLOAD = "Upload CSV"
-SOURCE_SAMPLE = "Use sample data"
-LANGUAGES = {"English": ReportLanguage.ENGLISH, "German": ReportLanguage.GERMAN}
-OUTCOME_KEY = "report_outcome"
 CHART_COLOR = "#F59E0B"
 TIME_STEP_SECONDS = 900
-DATE_TIME_FORMAT = "%d.%m.%Y %H:%M"
+LANGUAGE_KEY = "ui_language"
+SOURCE_KEY = "log_source"
+UPLOAD_KEY = "fault_log_upload"
+SHIFT_KEY = "shift_preset"
+SHIFT_START_KEY = "shift_start"
+SHIFT_END_KEY = "shift_end"
+CONFIRM_EMPTY_KEY = "confirm_empty_report"
+GENERATE_KEY = "generate_report"
+DOWNLOAD_KEY = "download_report"
+OUTCOME_KEY = "report_outcome"
 
 
 @dataclass(frozen=True)
 class Selection:
+    language: ReportLanguage
     log_bytes: bytes | None
     log_chosen: bool
     shift_start: time
     shift_end: time
-    language: ReportLanguage
     preview: LogPreview | None
-    preview_error: ErrorMessage | None
+    preview_error: Exception | None
+    empty_report_confirmed: bool
     clicked: bool
 
 
 @dataclass(frozen=True)
 class ReportOutcome:
-    steps_markdown: str
+    tracker: StepTracker
+    report_language: ReportLanguage
+    created_at: datetime
     report: str | None = None
     downtime: dict[str, float] = field(default_factory=dict)
-    file_name: str = ""
-    error: ErrorMessage | None = None
+    error: Exception | None = None
+    stopped_answer: str | None = None
 
 
 @contextmanager
@@ -72,132 +90,166 @@ def fault_log_file(log_bytes: bytes | None) -> Iterator[Path]:
         yield path
 
 
-def load_preview(log_bytes: bytes | None, shift_start: time, shift_end: time) -> tuple[LogPreview | None, ErrorMessage | None]:
+def load_preview(log_bytes: bytes | None, shift_start: time, shift_end: time) -> tuple[LogPreview | None, Exception | None]:
     with fault_log_file(log_bytes) as log_path:
         try:
             return preview_log(log_path, shift_start, shift_end), None
         # A broken upload is shown as a message, never a traceback.
         except Exception as error:  # noqa: BLE001
-            return None, describe_error(error)
+            return None, error
 
 
 def render_sidebar() -> Selection:
     with st.sidebar:
+        choice = st.segmented_control(
+            LANGUAGE_TOGGLE_LABEL,
+            list(LANGUAGE_CHOICES),
+            default=DEFAULT_LANGUAGE_CHOICE,
+            required=True,
+            key=LANGUAGE_KEY,
+            width="stretch",
+        )
+        lang = report_language_for(choice)
         st.image(str(LOGO_PATH), width=120)
-        source = st.radio("Fault log", [SOURCE_UPLOAD, SOURCE_SAMPLE])
-        upload = st.file_uploader("Fault log CSV", type=["csv"]) if source == SOURCE_UPLOAD else None
+        source = st.radio(
+            t(Text.FAULT_LOG, lang), list(LogSource), format_func=lambda option: log_source_label(option, lang), key=SOURCE_KEY
+        )
+        upload = st.file_uploader(t(Text.UPLOAD_LABEL, lang), type=["csv"], key=UPLOAD_KEY) if source is LogSource.UPLOAD else None
         preset = st.segmented_control(
-            "Shift", list(ShiftPreset), default=ShiftPreset.EARLY, required=True, format_func=preset_label, width="stretch"
+            t(Text.SHIFT, lang),
+            list(ShiftPreset),
+            default=ShiftPreset.EARLY,
+            required=True,
+            format_func=lambda option: preset_label(option, lang),
+            key=SHIFT_KEY,
+            width="stretch",
         )
         custom_start, custom_end = time(6, 0), time(14, 0)
         if preset is ShiftPreset.CUSTOM:
-            custom_start = st.time_input("Shift start", custom_start, step=TIME_STEP_SECONDS)
-            custom_end = st.time_input("Shift end", custom_end, step=TIME_STEP_SECONDS)
+            custom_start = st.time_input(t(Text.SHIFT_START, lang), custom_start, step=TIME_STEP_SECONDS, key=SHIFT_START_KEY)
+            custom_end = st.time_input(t(Text.SHIFT_END, lang), custom_end, step=TIME_STEP_SECONDS, key=SHIFT_END_KEY)
         shift_start, shift_end = shift_times(preset, custom_start, custom_end)
-        language_name = st.radio("Report language", list(LANGUAGES), horizontal=True)
 
-        log_chosen = source == SOURCE_SAMPLE or upload is not None
+        log_chosen = source is LogSource.SAMPLE or upload is not None
         log_bytes = upload.getvalue() if upload is not None else None
         preview, preview_error = load_preview(log_bytes, shift_start, shift_end) if log_chosen else (None, None)
-        clicked = st.button("Generate report", type="primary", disabled=preview is None)
-        st.caption(QUOTA_NOTE)
-    return Selection(log_bytes, log_chosen, shift_start, shift_end, LANGUAGES[language_name], preview, preview_error, clicked)
+        confirmed = False
+        if preview is not None and preview.shift_is_empty:
+            confirmed = st.checkbox(t(Text.CONFIRM_EMPTY_REPORT, lang), key=CONFIRM_EMPTY_KEY)
+        clicked = st.button(
+            t(Text.GENERATE_REPORT, lang), type="primary", disabled=not can_generate(preview, confirmed), key=GENERATE_KEY
+        )
+        st.caption(t(Text.QUOTA_NOTE, lang))
+    return Selection(lang, log_bytes, log_chosen, shift_start, shift_end, preview, preview_error, confirmed, clicked)
 
 
-def render_error(message: ErrorMessage) -> None:
+def render_error(message: ErrorMessage, lang: ReportLanguage) -> None:
     st.error(message.summary)
     if message.details:
-        with st.expander("Technical details"):
+        with st.expander(t(Text.TECHNICAL_DETAILS, lang)):
             st.code(message.details, language=None, wrap_lines=True)
 
 
-def render_preview(preview: LogPreview) -> None:
+def render_preview(preview: LogPreview, lang: ReportLanguage) -> None:
     with st.container(border=True):
-        st.markdown("**Fault log preview**")
+        st.markdown(f"**{t(Text.PREVIEW_HEADING, lang)}**")
         with st.container(horizontal=True):
-            st.metric("Events", preview.event_count)
-            st.metric("Machines", len(preview.machine_ids))
-            st.metric("In this shift", preview.events_in_shift)
-        st.caption(
-            f"Machines: {', '.join(preview.machine_ids)} · "
-            f"first event {preview.first_event:{DATE_TIME_FORMAT}}, last event {preview.last_event:{DATE_TIME_FORMAT}} · "
-            f"shift {preview.shift.start:{DATE_TIME_FORMAT}} to {preview.shift.end:{DATE_TIME_FORMAT}}"
-        )
+            st.metric(t(Text.METRIC_EVENTS, lang), preview.event_count)
+            st.metric(t(Text.METRIC_MACHINES, lang), len(preview.machine_ids))
+            st.metric(t(Text.METRIC_IN_SHIFT, lang), preview.events_in_shift)
+        st.caption(preview.details(lang))
+    if preview.shift_is_empty:
+        st.warning(t(Text.NO_EVENTS_IN_SHIFT, lang))
 
 
 def run_report(selection: Selection) -> ReportOutcome:
+    lang = selection.language
     tracker = StepTracker()
     streamed: list[str] = []
     live = st.empty()
     with live.container():
-        st.subheader("Steps")
+        st.subheader(t(Text.AGENT_STEPS, lang))
         steps_box = st.empty()
-        st.subheader("Report")
+        st.subheader(t(Text.SHIFT_REPORT, lang))
         report_box = st.empty()
 
     def on_event(event: TraceEvent) -> None:
         tracker.on_event(event)
-        steps_box.markdown(tracker.to_markdown())
+        steps_box.markdown(tracker.to_markdown(lang))
 
     def on_wait(seconds: float, reason: str) -> None:
         tracker.on_wait(seconds, reason)
-        steps_box.markdown(tracker.to_markdown())
+        steps_box.markdown(tracker.to_markdown(lang))
 
     def on_token(text: str) -> None:
         streamed.append(text)
         report_box.markdown("".join(streamed))
 
+    created_at = datetime.now()
     with fault_log_file(selection.log_bytes) as log_path:
         try:
             shift = ShiftWindow.for_log(log_path, selection.shift_start, selection.shift_end)
             agent = build_agent(Settings.from_env(), log_path, shift, on_token=on_token, on_event=on_event, on_wait=on_wait)
-            result = agent.run(report_task(selection.language, shift.start, shift.end))
+            result = agent.run(report_task(lang, shift.start, shift.end))
             downtime = downtime_by_machine(log_path, shift)
         # The page shows every failure as a message, never a traceback.
         except Exception as error:  # noqa: BLE001
             live.empty()
-            return ReportOutcome(tracker.to_markdown(), error=describe_error(error))
+            return ReportOutcome(tracker, lang, created_at, error=error)
     live.empty()
 
     if result.stop_reason is not StopReason.FINAL_ANSWER:
-        return ReportOutcome(tracker.to_markdown(), error=ErrorMessage(f"Run stopped without a report: {result.answer}"))
-    return ReportOutcome(
-        tracker.to_markdown(),
-        report=result.answer,
-        downtime=downtime,
-        file_name=report_file_name(selection.language, datetime.now()),
+        return ReportOutcome(tracker, lang, created_at, stopped_answer=result.answer)
+    return ReportOutcome(tracker, lang, created_at, report=result.answer, downtime=downtime)
+
+
+def render_outcome(outcome: ReportOutcome, lang: ReportLanguage) -> None:
+    steps_markdown = outcome.tracker.to_markdown(lang)
+    if steps_markdown:
+        with st.expander(t(Text.AGENT_STEPS, lang)):
+            st.markdown(steps_markdown)
+    if outcome.error is not None:
+        render_error(describe_error(outcome.error, lang), lang)
+        return
+    if outcome.stopped_answer is not None:
+        render_error(ErrorMessage(t(Text.RUN_STOPPED, lang, answer=outcome.stopped_answer)), lang)
+        return
+    if outcome.report is None:
+        render_error(ErrorMessage(t(Text.NO_REPORT, lang)), lang)
+        return
+    st.markdown(outcome.report)
+    st.subheader(t(Text.DOWNTIME_PER_MACHINE, lang))
+    machine_label, minutes_label = t(Text.MACHINE, lang), t(Text.DOWNTIME_MINUTES, lang)
+    chart_data = pd.DataFrame(
+        {minutes_label: list(outcome.downtime.values())}, index=pd.Index(list(outcome.downtime), name=machine_label)
+    )
+    st.bar_chart(chart_data, x_label=machine_label, y_label=minutes_label, color=CHART_COLOR)
+    st.download_button(
+        t(Text.DOWNLOAD_REPORT, lang),
+        data=outcome.report,
+        file_name=report_file_name(outcome.report_language, outcome.created_at),
+        mime="text/markdown",
+        key=DOWNLOAD_KEY,
     )
 
 
-def render_outcome(outcome: ReportOutcome) -> None:
-    if outcome.steps_markdown:
-        with st.expander("Agent steps"):
-            st.markdown(outcome.steps_markdown)
-    if outcome.error is not None or outcome.report is None:
-        render_error(outcome.error or ErrorMessage("No report was produced."))
-        return
-    st.markdown(outcome.report)
-    st.subheader("Downtime per machine")
-    chart_data = pd.DataFrame({"Downtime (min)": list(outcome.downtime.values())}, index=list(outcome.downtime))
-    st.bar_chart(chart_data, color=CHART_COLOR)
-    st.download_button("Download report", data=outcome.report, file_name=outcome.file_name, mime="text/markdown")
-
-
 def main() -> None:
-    st.set_page_config(page_title="Maestro Agent", page_icon=str(LOGO_PATH), layout="wide")
-    st.title("Maestro shift report")
+    lang = report_language_for(st.session_state.get(LANGUAGE_KEY))
+    st.set_page_config(page_title=t(Text.PAGE_TAB_TITLE, lang), page_icon=str(LOGO_PATH), layout="wide")
     selection = render_sidebar()
+    lang = selection.language
+    st.title(t(Text.PAGE_TITLE, lang))
     if selection.preview_error is not None:
-        render_error(selection.preview_error)
+        render_error(describe_error(selection.preview_error, lang), lang)
     elif selection.preview is not None:
-        render_preview(selection.preview)
-    if selection.clicked and selection.preview is not None:
+        render_preview(selection.preview, lang)
+    if selection.clicked and can_generate(selection.preview, selection.empty_report_confirmed):
         st.session_state[OUTCOME_KEY] = run_report(selection)
     outcome = st.session_state.get(OUTCOME_KEY)
     if outcome is not None:
-        render_outcome(outcome)
+        render_outcome(outcome, lang)
     elif not selection.log_chosen:
-        st.info("Choose a fault log in the sidebar and click Generate report.")
+        st.info(t(Text.INFO_CHOOSE_LOG, lang))
 
 
 if __name__ == "__main__":

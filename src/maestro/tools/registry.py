@@ -44,5 +44,6 @@ class ToolRegistry:
 
         try:
             return tool.run(**arguments)
-        except Exception as exc:
+        # A failing tool becomes an error result the model can react to; it never stops the run.
+        except Exception as exc:  # noqa: BLE001
             return ToolResult.failure(f"{type(exc).__name__}: {exc}")

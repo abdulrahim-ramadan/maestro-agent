@@ -2,7 +2,13 @@ import difflib
 from typing import Any, ClassVar
 
 from maestro.tools.base import Tool, ToolResult
-from maestro.tools.factory_data import EVENT_COLUMNS, FaultEvent, FaultLogRepository, Severity, downtime_minutes
+from maestro.tools.factory_data import (
+    EVENT_COLUMNS,
+    FaultEvent,
+    FaultLogRepository,
+    Severity,
+    downtime_minutes,
+)
 
 MAX_EVENTS = 40
 MAX_CLOSE_MATCHES = 3

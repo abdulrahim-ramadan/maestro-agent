@@ -8,7 +8,11 @@ from maestro.core.agent import Agent
 from maestro.core.trace import TraceEvent
 from maestro.llm.client import LLMClient
 from maestro.tools import ToolRegistry
-from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
+from maestro.tools.factory import (
+    CalcDowntimeTool,
+    LookupErrorCodeTool,
+    ReadFaultLogTool,
+)
 from maestro.tools.factory_data import FaultLogRepository, load_error_codes
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"

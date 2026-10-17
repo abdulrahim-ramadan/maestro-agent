@@ -5,7 +5,13 @@ import pytest
 from maestro.knowledge.chunker import MarkdownChunker
 from maestro.knowledge.store import SearchHit
 from maestro.tools.factory_data import load_error_codes
-from maestro.tools.manuals import MAX_HITS, MAX_QUERIES, REPEATED_TEXT, MachineType, SearchManualsTool
+from maestro.tools.manuals import (
+    MAX_HITS,
+    MAX_QUERIES,
+    REPEATED_TEXT,
+    MachineType,
+    SearchManualsTool,
+)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 

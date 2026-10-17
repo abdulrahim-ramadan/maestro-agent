@@ -5,7 +5,13 @@ from typing import Any, ClassVar
 
 import pytest
 
-from maestro.core.agent import EMPTY_REPLY_PROMPT, MAX_TOOL_OUTPUT_CHARS, TRUNCATION_NOTE, Agent, StopReason
+from maestro.core.agent import (
+    EMPTY_REPLY_PROMPT,
+    MAX_TOOL_OUTPUT_CHARS,
+    TRUNCATION_NOTE,
+    Agent,
+    StopReason,
+)
 from maestro.core.trace import EventKind, Trace, TraceEvent
 from maestro.llm.types import AssistantTurn, ToolCall
 from maestro.tools import Tool, ToolRegistry, ToolResult
