@@ -127,9 +127,11 @@ def test_read_fault_log_returns_at_most_40_events(tmp_path: Path) -> None:
 def test_read_fault_log_returns_compact_rows(repository: FaultLogRepository) -> None:
     result = ReadFaultLogTool(repository).run(machine_id="PRS-01")
 
-    assert result.data["columns"] == ["event_id", "start_time", "end_time", "machine_id", "error_code", "severity", "message"]
+    assert result.data["columns"] == [
+        "event_id", "start_time", "end_time", "machine_id", "error_code", "severity", "message", "open"
+    ]
     assert result.data["events"] == [
-        ["EV-0001", "2026-10-14 05:40", "2026-10-14 06:25", "PRS-01", "E301", "critical", "Hydraulic pressure low"]
+        ["EV-0001", "2026-10-14 05:40", "2026-10-14 06:25", "PRS-01", "E301", "critical", "Hydraulic pressure low", False]
     ]
 
 

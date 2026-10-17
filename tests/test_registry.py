@@ -103,3 +103,17 @@ def test_exception_inside_run_becomes_failure(registry: ToolRegistry) -> None:
 def test_duplicate_registration_raises(registry: ToolRegistry) -> None:
     with pytest.raises(ValueError):
         registry.register(EchoTool())
+
+
+@pytest.mark.parametrize(
+    "raw_arguments",
+    ["[" * 100_000 + "]" * 100_000, '{"text": ' + "9" * 5000 + "}"],
+    ids=["deeply-nested", "huge-integer"],
+)
+def test_execute_never_raises_on_hostile_json(raw_arguments: str) -> None:
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+
+    result = registry.execute("echo", raw_arguments)
+
+    assert result == ToolResult.failure("invalid JSON arguments")

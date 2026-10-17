@@ -20,7 +20,7 @@ from maestro.core.trace import EventKind, TraceEvent
 from maestro.knowledge.store import ManualStore
 from maestro.llm.client import QuotaExhaustedError
 from maestro.prompts import ReportLanguage, report_task
-from maestro.tools.factory_data import ShiftWindow
+from maestro.tools.factory_data import FaultLogError, ShiftWindow
 
 MAX_ARGUMENT_CHARS = 70
 SECRET_PATTERN = re.compile(r"(?:sk-|gsk_|AIza)[\w*\-]+")
@@ -85,8 +85,15 @@ def run_report(args: argparse.Namespace, console: Console, agent_factory: AgentF
     if not log_path.is_file():
         console.print(f"[bold red]Fault log not found:[/bold red] {escape(str(log_path))}", highlight=False)
         return 1
+    out_dir = Path(args.out)
+    if out_dir.exists() and not out_dir.is_dir():
+        console.print(f"[bold red]Output path is not a directory:[/bold red] {escape(str(out_dir))}", highlight=False)
+        return 1
     try:
         shift = ShiftWindow.for_log(log_path, args.shift_start, args.shift_end)
+    except FaultLogError as error:
+        console.print(f"[bold red]Fault log error:[/bold red] {escape(str(error))}", highlight=False)
+        return 1
     except ValueError as error:
         console.print(f"[bold red]Invalid shift:[/bold red] {escape(str(error))}", highlight=False)
         return 1

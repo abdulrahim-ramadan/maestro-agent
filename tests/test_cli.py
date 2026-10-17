@@ -234,3 +234,31 @@ def test_default_log_is_the_project_data_file_from_any_folder() -> None:
 
 def test_chroma_dir_is_inside_the_project() -> None:
     assert app.CHROMA_DIR == app.PROJECT_DIR / "chroma_db"
+
+
+def test_invalid_fault_log_prints_line_and_reason_and_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "broken.csv").write_text(
+        "event_id,start_time,end_time,machine_id,error_code,severity,message\n"
+        "EV-0001,2026-10-14 07:00,2026-10-14 07:30,CNV-01,E202,fatal,x\n",
+        encoding="utf-8",
+    )
+    factory = FakeAgentFactory()
+
+    exit_code = cli.main(["report", "--log", "broken.csv"], agent_factory=factory)
+
+    output = " ".join(capsys.readouterr().out.split())
+    assert exit_code == 1
+    assert factory.agents == []
+    assert "Fault log error: broken.csv line 2: unknown severity 'fatal'" in output
+    assert "Traceback" not in output
+
+
+def test_out_path_that_is_a_file_exits_1_before_the_agent_runs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "reports.txt").write_text("not a folder", encoding="utf-8")
+    factory = FakeAgentFactory()
+
+    exit_code = cli.main(["report", "--log", "my_log.csv", "--out", "reports.txt"], agent_factory=factory)
+
+    assert exit_code == 1
+    assert factory.agents == []
+    assert "Output path is not a directory: reports.txt" in capsys.readouterr().out

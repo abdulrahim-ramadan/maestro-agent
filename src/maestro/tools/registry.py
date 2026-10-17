@@ -32,7 +32,7 @@ class ToolRegistry:
             raw_arguments = "{}"
         try:
             arguments = json.loads(raw_arguments)
-        except (json.JSONDecodeError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             return ToolResult.failure("invalid JSON arguments")
         if not isinstance(arguments, dict):
             return ToolResult.failure("invalid JSON arguments")
