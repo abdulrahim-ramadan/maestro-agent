@@ -4,7 +4,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Sequence
-from datetime import datetime
+from datetime import datetime, time as clock_time
 from pathlib import Path
 
 from openai import APIError
@@ -12,15 +12,19 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from maestro.app import CHROMA_DIR, MANUALS_DIR, SHIFT_END, SHIFT_START, build_agent
+from maestro.app import CHROMA_DIR, MANUALS_DIR, build_agent
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
 from maestro.knowledge.store import ManualStore
+from maestro.llm.client import QuotaExhaustedError
 from maestro.prompts import ReportLanguage, report_task
+from maestro.tools.factory_data import ShiftWindow
 
 MAX_ARGUMENT_CHARS = 70
 SECRET_PATTERN = re.compile(r"sk-[\w*\-]+")
+DEFAULT_SHIFT_START = "06:00"
+DEFAULT_SHIFT_END = "14:00"
 
 AgentFactory = Callable[..., Agent]
 
@@ -74,14 +78,24 @@ def save_report(report: str, out_dir: str | Path, language: ReportLanguage) -> P
 
 
 def run_report(args: argparse.Namespace, console: Console, agent_factory: AgentFactory) -> int:
+    log_path = Path(args.log)
+    if not log_path.is_file():
+        console.print(f"[bold red]Fault log not found:[/bold red] {escape(str(log_path))}", highlight=False)
+        return 1
+    try:
+        shift = ShiftWindow.for_log(log_path, args.shift_start, args.shift_end)
+    except ValueError as error:
+        console.print(f"[bold red]Invalid shift:[/bold red] {escape(str(error))}", highlight=False)
+        return 1
+
     language = ReportLanguage(args.lang)
     view = LiveStepView(console)
-    agent = agent_factory(Settings.from_env(), args.log, on_token=view.on_token, on_event=view.on_event)
-    console.print(f"[bold]Shift report[/bold] {SHIFT_START:%Y-%m-%d %H:%M}-{SHIFT_END:%H:%M}, language: {language.value}")
+    agent = agent_factory(Settings.from_env(), log_path, shift, on_token=view.on_token, on_event=view.on_event)
+    console.print(f"[bold]Shift report[/bold] {shift.start:%Y-%m-%d %H:%M} to {shift.end:%Y-%m-%d %H:%M}, language: {language.value}")
 
     started = time.perf_counter()
     try:
-        result = agent.run(report_task(language, SHIFT_START, SHIFT_END))
+        result = agent.run(report_task(language, shift.start, shift.end))
     finally:
         view.finish()
     duration = time.perf_counter() - started
@@ -109,6 +123,13 @@ def run_index(console: Console) -> int:
     return 0
 
 
+def _clock_time(value: str) -> clock_time:
+    try:
+        return datetime.strptime(value, "%H:%M").time()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a time in HH:MM format") from None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="maestro", description="Shift report agent for production line maintenance")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--log", default="data/fault_log.csv", help="path to the fault log CSV")
     report.add_argument("--lang", choices=[language.value for language in ReportLanguage], default="en")
     report.add_argument("--out", default="reports", help="directory for the saved report")
+    report.add_argument("--shift-start", type=_clock_time, default=DEFAULT_SHIFT_START, help="shift start as HH:MM")
+    report.add_argument("--shift-end", type=_clock_time, default=DEFAULT_SHIFT_END, help="shift end as HH:MM")
 
     commands.add_parser("index", help="build or refresh the maintenance manual index")
     return parser
@@ -137,6 +160,8 @@ def main(argv: Sequence[str] | None = None, agent_factory: AgentFactory = build_
         return run_report(args, console, agent_factory)
     except ConfigError as error:
         console.print(f"[bold red]Configuration error:[/bold red] {_redact(str(error))}", highlight=False)
+    except QuotaExhaustedError as error:
+        console.print(f"[bold red]Quota exhausted:[/bold red] {_redact(str(error))}", highlight=False)
     except APIError as error:
         console.print(f"[bold red]API error ({type(error).__name__}):[/bold red] {_redact(str(error))}", highlight=False)
     return 1

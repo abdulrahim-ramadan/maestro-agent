@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,14 @@ from maestro import cli
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import AgentResult, StopReason
 from maestro.core.trace import EventKind, Trace
+from maestro.llm.client import QuotaExhaustedError
+from maestro.tools.factory_data import ShiftWindow
 
+LOG = (
+    "event_id,start_time,end_time,machine_id,error_code,severity,message\n"
+    "EV-0001,2026-10-14 22:30:00,2026-10-14 23:00:00,CNV-01,E202,critical,Part jam\n"
+    "EV-0002,2026-10-15 01:00:00,2026-10-15 01:20:00,CNV-01,E201,warning,Belt slip\n"
+)
 REPORT = "# Shift report\n\n## Summary\nAll good."
 
 
@@ -44,10 +52,14 @@ class FakeAgentFactory:
     def __init__(self, **agent_options: Any) -> None:
         self._agent_options = agent_options
         self.agents: list[FakeAgent] = []
-        self.log_paths: list[str] = []
+        self.log_paths: list[Path] = []
+        self.shifts: list[ShiftWindow] = []
 
-    def __call__(self, settings: Settings, log_path: str, on_token: Any = None, on_event: Any = None) -> FakeAgent:
+    def __call__(
+        self, settings: Settings, log_path: Path, shift: ShiftWindow, on_token: Any = None, on_event: Any = None
+    ) -> FakeAgent:
         self.log_paths.append(log_path)
+        self.shifts.append(shift)
         agent = FakeAgent(on_token, on_event, **self._agent_options)
         self.agents.append(agent)
         return agent
@@ -56,6 +68,9 @@ class FakeAgentFactory:
 @pytest.fixture(autouse=True)
 def run_in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "fault_log.csv").write_text(LOG, encoding="utf-8")
+    (tmp_path / "my_log.csv").write_text(LOG, encoding="utf-8")
     monkeypatch.setattr(Settings, "from_env", classmethod(lambda cls: Settings(api_key="sk-test", model="m", base_url=None)))
 
 
@@ -65,7 +80,7 @@ def test_report_saves_markdown_and_prints_summary(tmp_path: Path, capsys: pytest
     exit_code = cli.main(["report", "--log", "my_log.csv", "--lang", "de", "--out", "out"], agent_factory=factory)
 
     assert exit_code == 0
-    assert factory.log_paths == ["my_log.csv"]
+    assert factory.log_paths == [Path("my_log.csv")]
     assert factory.agents[0].tasks[0].endswith("Report language: German.")
     reports = list((tmp_path / "out").glob("shift_report_*_de.md"))
     assert len(reports) == 1
@@ -121,3 +136,56 @@ def test_short_arguments_are_truncated() -> None:
 
     assert len(text) == cli.MAX_ARGUMENT_CHARS
     assert text.endswith("...")
+
+
+def test_missing_log_prints_message_and_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
+    factory = FakeAgentFactory()
+
+    exit_code = cli.main(["report", "--log", "missing.csv"], agent_factory=factory)
+
+    assert exit_code == 1
+    assert factory.agents == []
+    assert "Fault log not found: missing.csv" in capsys.readouterr().out
+
+
+def test_default_shift_is_early_shift_on_log_date() -> None:
+    factory = FakeAgentFactory()
+
+    cli.main(["report"], agent_factory=factory)
+
+    assert factory.shifts == [ShiftWindow(datetime(2026, 10, 14, 6, 0), datetime(2026, 10, 14, 14, 0))]
+    assert "2026-10-14 from 06:00 to 14:00" in factory.agents[0].tasks[0]
+
+
+def test_shift_options_reach_repository_and_task() -> None:
+    factory = FakeAgentFactory()
+
+    exit_code = cli.main(["report", "--shift-start", "22:00", "--shift-end", "06:00"], agent_factory=factory)
+
+    assert exit_code == 0
+    assert factory.shifts == [ShiftWindow(datetime(2026, 10, 14, 22, 0), datetime(2026, 10, 15, 6, 0))]
+    assert "2026-10-14 from 22:00 to 06:00" in factory.agents[0].tasks[0]
+
+
+def test_invalid_shift_time_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["report", "--shift-start", "6 Uhr"], agent_factory=FakeAgentFactory())
+
+    assert exit_info.value.code == 2
+    assert "'6 Uhr' is not a time in HH:MM format" in capsys.readouterr().err
+
+
+def test_equal_shift_start_and_end_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = cli.main(["report", "--shift-start", "06:00", "--shift-end", "06:00"], agent_factory=FakeAgentFactory())
+
+    assert exit_code == 1
+    assert "Invalid shift: shift start and end must differ" in capsys.readouterr().out
+
+
+def test_quota_error_prints_message_and_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = cli.main(["report"], agent_factory=FakeAgentFactory(error=QuotaExhaustedError("8m50.496s")))
+
+    assert exit_code == 1
+    output = " ".join(capsys.readouterr().out.split())
+    assert "Quota exhausted:" in output
+    assert "daily limit; it asks to try again in 8m50.496s" in output

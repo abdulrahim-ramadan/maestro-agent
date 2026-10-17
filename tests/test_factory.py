@@ -1,13 +1,20 @@
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 
 import pytest
 
 from maestro.tools import ToolRegistry
 from maestro.tools.factory import CalcDowntimeTool, LookupErrorCodeTool, ReadFaultLogTool
-from maestro.tools.factory_data import FaultEvent, FaultLogRepository, Severity, downtime_minutes, load_error_codes
+from maestro.tools.factory_data import (
+    FaultEvent,
+    FaultLogRepository,
+    Severity,
+    ShiftWindow,
+    downtime_minutes,
+    load_error_codes,
+)
 
 SHIFT_START = datetime(2026, 10, 14, 6, 0)
 SHIFT_END = datetime(2026, 10, 14, 14, 0)
@@ -216,3 +223,43 @@ def test_lookup_rejects_empty_or_non_list_codes(codes: object) -> None:
     result = LookupErrorCodeTool(ERROR_CODES).run(codes=codes)
 
     assert result == result.failure("codes must be a non-empty list of strings")
+
+
+def test_shift_window_uses_date_of_first_event_in_shift() -> None:
+    events = [event("05:40", "06:25"), event("09:00", "09:30")]
+
+    shift = ShiftWindow.for_events(events, time(6, 0), time(14, 0))
+
+    assert shift == ShiftWindow(datetime(2026, 10, 14, 6, 0), datetime(2026, 10, 14, 14, 0))
+
+
+def test_night_shift_ends_on_the_next_day() -> None:
+    events = [event("22:30", "23:00")]
+
+    shift = ShiftWindow.for_events(events, time(22, 0), time(6, 0))
+
+    assert shift == ShiftWindow(datetime(2026, 10, 14, 22, 0), datetime(2026, 10, 15, 6, 0))
+
+
+def test_shift_window_falls_back_to_first_event_date() -> None:
+    shift = ShiftWindow.for_events([event("01:00", "01:30")], time(22, 0), time(6, 0))
+
+    assert shift.start == datetime(2026, 10, 14, 22, 0)
+
+
+@pytest.mark.parametrize(
+    "events, start, end, message",
+    [
+        ([], time(6, 0), time(14, 0), "no events"),
+        ([event("09:00", "09:30")], time(6, 0), time(6, 0), "must differ"),
+    ],
+)
+def test_shift_window_rejects_invalid_input(events: list[FaultEvent], start: time, end: time, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ShiftWindow.for_events(events, start, end)
+
+
+def test_shift_window_for_log(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "fault_log.csv", ROWS)
+
+    assert ShiftWindow.for_log(path, time(6, 0), time(14, 0)) == ShiftWindow(SHIFT_START, SHIFT_END)
