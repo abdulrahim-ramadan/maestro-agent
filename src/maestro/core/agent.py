@@ -9,8 +9,9 @@ from maestro.core.trace import EventKind, Trace, TraceEvent
 from maestro.llm.types import AssistantTurn, ToolCall
 from maestro.tools.registry import ToolRegistry
 
-MAX_TOOL_OUTPUT_CHARS = 4000
+MAX_TOOL_OUTPUT_CHARS = 16000
 TRUNCATION_NOTE = "[truncated]"
+EMPTY_REPLY_PROMPT = "Your last reply was empty. Continue with the next tool call or write the final answer."
 
 
 class LLMLike(Protocol):
@@ -82,6 +83,11 @@ class Agent:
             turn = self._llm.stream(messages, self._registry.schemas(), self._on_token)
             messages.append(turn.to_message())
             self._record(trace, step, EventKind.ASSISTANT, {"content": turn.content, "tool_calls": len(turn.tool_calls)})
+
+            if not turn.has_tool_calls and not turn.content.strip():
+                self._record(trace, step, EventKind.WARNING, {"warning": "empty reply without tool calls"})
+                messages.append({"role": "user", "content": EMPTY_REPLY_PROMPT})
+                continue
 
             if not turn.has_tool_calls:
                 self._record(trace, step, EventKind.FINAL, {"answer": turn.content})

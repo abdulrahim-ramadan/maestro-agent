@@ -13,7 +13,11 @@ dependencies = [
     "openai>=1.40",
     "python-dotenv>=1.0",
     "chromadb>=0.5",
+    "rich>=13.0",
 ]
+
+[project.scripts]
+maestro = "maestro.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]

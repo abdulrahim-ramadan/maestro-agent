@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from maestro.core.agent import MAX_TOOL_OUTPUT_CHARS, TRUNCATION_NOTE, Agent, StopReason
+from maestro.core.agent import EMPTY_REPLY_PROMPT, MAX_TOOL_OUTPUT_CHARS, TRUNCATION_NOTE, Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
 from maestro.llm.types import AssistantTurn, ToolCall
 from maestro.tools import Tool, ToolRegistry, ToolResult
@@ -57,7 +57,7 @@ class LongReportTool(Tool):
     parameters = {"type": "object", "properties": {}}
 
     def run(self, **kwargs: Any) -> ToolResult:
-        return ToolResult.success("x" * 10_000)
+        return ToolResult.success("x" * 40_000)
 
 
 def tool_turn(call_id: str, name: str, arguments: str) -> AssistantTurn:
@@ -132,7 +132,7 @@ def test_long_tool_output_is_truncated_before_reaching_model() -> None:
     make_agent(llm, LongReportTool()).run("Read the report")
 
     content = llm.received_messages[1][-1]["content"]
-    full_output = ToolResult.success("x" * 10_000).to_message()
+    full_output = ToolResult.success("x" * 40_000).to_message()
     assert content == f"{full_output[:MAX_TOOL_OUTPUT_CHARS]}\n{TRUNCATION_NOTE}"
     assert len(content) == MAX_TOOL_OUTPUT_CHARS + len(TRUNCATION_NOTE) + 1
 
@@ -201,3 +201,23 @@ def test_failing_on_event_does_not_stop_the_run() -> None:
     warning = saved[1]["payload"]
     assert warning["event_kind"] == "task"
     assert warning["error"].startswith("UnicodeEncodeError:")
+
+
+def test_empty_reply_asks_the_model_to_continue() -> None:
+    llm = ScriptedLLM([final_turn("  "), tool_turn("call_1", "add_numbers", '{"a": 2, "b": 3}'), final_turn("5")])
+
+    result = make_agent(llm, AddNumbersTool()).run("Add 2 and 3")
+
+    assert result.answer == "5"
+    assert result.steps == 3
+    assert llm.received_messages[1][-1] == {"role": "user", "content": EMPTY_REPLY_PROMPT}
+    saved = json.loads(result.trace_path.read_text(encoding="utf-8"))
+    assert [event["kind"] for event in saved][:3] == ["task", "assistant", "warning"]
+
+
+def test_only_empty_replies_stop_at_max_steps() -> None:
+    llm = ScriptedLLM([final_turn("")] * 3)
+
+    result = make_agent(llm, AddNumbersTool(), max_steps=3).run("Add 2 and 3")
+
+    assert result.stop_reason is StopReason.MAX_STEPS

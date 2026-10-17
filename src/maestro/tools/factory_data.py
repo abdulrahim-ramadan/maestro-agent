@@ -7,6 +7,9 @@ from enum import Enum
 from pathlib import Path
 
 
+EVENT_COLUMNS = ["event_id", "start_time", "end_time", "machine_id", "error_code", "severity", "message"]
+
+
 class Severity(Enum):
     INFO = "info"
     WARNING = "warning"
@@ -23,16 +26,16 @@ class FaultEvent:
     severity: Severity
     message: str
 
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "event_id": self.event_id,
-            "start_time": self.start_time.isoformat(sep=" "),
-            "end_time": self.end_time.isoformat(sep=" "),
-            "machine_id": self.machine_id,
-            "error_code": self.error_code,
-            "severity": self.severity.value,
-            "message": self.message,
-        }
+    def to_row(self) -> list[str]:
+        return [
+            self.event_id,
+            f"{self.start_time:%Y-%m-%d %H:%M}",
+            f"{self.end_time:%Y-%m-%d %H:%M}",
+            self.machine_id,
+            self.error_code,
+            self.severity.value,
+            self.message,
+        ]
 
 
 class FaultLogRepository:

@@ -101,7 +101,7 @@ def test_read_fault_log_filters_and_counts(repository: FaultLogRepository) -> No
     result = ReadFaultLogTool(repository).run(machine_id="ROB-01", severity="critical")
 
     assert result.ok
-    assert [e["event_id"] for e in result.data["events"]] == ["EV-0002", "EV-0003"]
+    assert [row[0] for row in result.data["events"]] == ["EV-0002", "EV-0003"]
     assert result.data["counts"] == {"info": 0, "warning": 0, "critical": 2}
 
 
@@ -115,6 +115,26 @@ def test_read_fault_log_returns_at_most_40_events(tmp_path: Path) -> None:
     assert result.data["counts"] == {"info": 0, "warning": 45, "critical": 0}
     assert result.data["total"] == 45
     assert result.data["truncated"] is True
+
+
+def test_read_fault_log_returns_compact_rows(repository: FaultLogRepository) -> None:
+    result = ReadFaultLogTool(repository).run(machine_id="PRS-01")
+
+    assert result.data["columns"] == ["event_id", "start_time", "end_time", "machine_id", "error_code", "severity", "message"]
+    assert result.data["events"] == [
+        ["EV-0001", "2026-10-14 05:40", "2026-10-14 06:25", "PRS-01", "E301", "critical", "Hydraulic pressure low"]
+    ]
+
+
+def test_read_fault_log_groups_critical_events(repository: FaultLogRepository) -> None:
+    result = ReadFaultLogTool(repository).run()
+
+    assert result.data["critical_groups"] == [
+        {"machine_id": "PRS-01", "error_code": "E301", "event_ids": ["EV-0001"]},
+        {"machine_id": "ROB-01", "error_code": "E101", "event_ids": ["EV-0002"]},
+        {"machine_id": "ROB-01", "error_code": "E103", "event_ids": ["EV-0003"]},
+        {"machine_id": "CNV-01", "error_code": "E202", "event_ids": ["EV-0006"]},
+    ]
 
 
 def test_read_fault_log_not_truncated_below_limit(repository: FaultLogRepository) -> None:
@@ -161,21 +181,38 @@ def test_load_error_codes(tmp_path: Path) -> None:
 
 
 def test_lookup_known_code() -> None:
-    result = LookupErrorCodeTool(ERROR_CODES).run(code=" e101 ")
+    result = LookupErrorCodeTool(ERROR_CODES).run(codes=[" e101 "])
 
-    assert result.data == {"code": "E101", **ERROR_CODES["E101"]}
+    assert result.data == {"entries": [{"code": "E101", **ERROR_CODES["E101"]}], "unknown": []}
+
+
+def test_lookup_several_codes_in_one_call() -> None:
+    result = LookupErrorCodeTool(ERROR_CODES).run(codes=["E301", "e101", "E301"])
+
+    assert result.ok
+    assert [entry["code"] for entry in result.data["entries"]] == ["E301", "E101"]
+    assert result.data["unknown"] == []
 
 
 def test_unknown_code_lists_up_to_three_close_matches() -> None:
-    result = LookupErrorCodeTool(ERROR_CODES).run(code="E10")
+    result = LookupErrorCodeTool(ERROR_CODES).run(codes=["E101", "E10"])
 
-    assert not result.ok
-    matches = result.error.split("close matches: ")[1].split(", ")
-    assert 1 <= len(matches) <= 3
-    assert all(match.startswith("E10") for match in matches)
+    assert result.ok
+    assert [entry["code"] for entry in result.data["entries"]] == ["E101"]
+    unknown = result.data["unknown"]
+    assert [item["code"] for item in unknown] == ["E10"]
+    assert 1 <= len(unknown[0]["close_matches"]) <= 3
+    assert all(match.startswith("E10") for match in unknown[0]["close_matches"])
 
 
 def test_unknown_code_without_close_matches() -> None:
-    result = LookupErrorCodeTool(ERROR_CODES).run(code="XYZ-999")
+    result = LookupErrorCodeTool(ERROR_CODES).run(codes=["XYZ-999"])
 
-    assert result == result.failure("unknown error code 'XYZ-999'; no close matches")
+    assert result.data == {"entries": [], "unknown": [{"code": "XYZ-999", "close_matches": []}]}
+
+
+@pytest.mark.parametrize("codes", [[], "E101"])
+def test_lookup_rejects_empty_or_non_list_codes(codes: object) -> None:
+    result = LookupErrorCodeTool(ERROR_CODES).run(codes=codes)
+
+    assert result == result.failure("codes must be a non-empty list of strings")

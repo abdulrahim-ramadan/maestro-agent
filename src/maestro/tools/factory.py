@@ -2,7 +2,7 @@ import difflib
 from typing import Any
 
 from maestro.tools.base import Tool, ToolResult
-from maestro.tools.factory_data import FaultLogRepository, Severity, downtime_minutes
+from maestro.tools.factory_data import EVENT_COLUMNS, FaultEvent, FaultLogRepository, Severity, downtime_minutes
 
 MAX_EVENTS = 40
 MAX_CLOSE_MATCHES = 3
@@ -12,9 +12,24 @@ def _unknown_machine(repository: FaultLogRepository, machine_id: str) -> ToolRes
     return ToolResult.failure(f"unknown machine_id '{machine_id}'; valid IDs: {', '.join(repository.machine_ids())}")
 
 
+def _critical_groups(events: list[FaultEvent]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str], list[str]] = {}
+    for event in events:
+        if event.severity is Severity.CRITICAL:
+            groups.setdefault((event.machine_id, event.error_code), []).append(event.event_id)
+    return [
+        {"machine_id": machine_id, "error_code": error_code, "event_ids": event_ids}
+        for (machine_id, error_code), event_ids in groups.items()
+    ]
+
+
 class ReadFaultLogTool(Tool):
     name = "read_fault_log"
-    description = "Read fault events of the current shift, optionally filtered by machine and severity."
+    description = (
+        "Read fault events of the current shift, optionally filtered by machine and severity. "
+        "Each event is a row in the order given by columns; "
+        "critical_groups lists the critical event IDs per machine and error code."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -41,8 +56,10 @@ class ReadFaultLogTool(Tool):
         counts = {value: sum(event.severity.value == value for event in events) for value in valid_severities}
         return ToolResult.success(
             {
-                "events": [event.to_dict() for event in events[:MAX_EVENTS]],
+                "columns": EVENT_COLUMNS,
+                "events": [event.to_row() for event in events[:MAX_EVENTS]],
                 "counts": counts,
+                "critical_groups": _critical_groups(events),
                 "total": len(events),
                 "truncated": len(events) > MAX_EVENTS,
             }
@@ -51,25 +68,39 @@ class ReadFaultLogTool(Tool):
 
 class LookupErrorCodeTool(Tool):
     name = "lookup_error_code"
-    description = "Look up an error code: title, category, likely cause and severity."
+    description = (
+        "Look up one or more error codes in one call: title, category, likely cause and severity. "
+        "Pass every code you need at once."
+    )
     parameters = {
         "type": "object",
-        "properties": {"code": {"type": "string", "description": "Error code, for example E101"}},
-        "required": ["code"],
+        "properties": {
+            "codes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": "Error codes, for example [\"E101\", \"E202\"]",
+            }
+        },
+        "required": ["codes"],
     }
 
     def __init__(self, error_codes: dict[str, dict[str, str]]) -> None:
         self._error_codes = error_codes
 
     def run(self, **kwargs: Any) -> ToolResult:
-        code = str(kwargs["code"]).strip().upper()
-        entry = self._error_codes.get(code)
-        if entry is not None:
-            return ToolResult.success({"code": code, **entry})
+        raw_codes = kwargs["codes"]
+        if not isinstance(raw_codes, list) or not raw_codes:
+            return ToolResult.failure("codes must be a non-empty list of strings")
 
-        matches = difflib.get_close_matches(code, list(self._error_codes), n=MAX_CLOSE_MATCHES)
-        suggestion = f"close matches: {', '.join(matches)}" if matches else "no close matches"
-        return ToolResult.failure(f"unknown error code '{code}'; {suggestion}")
+        codes = list(dict.fromkeys(str(code).strip().upper() for code in raw_codes))
+        entries = [{"code": code, **self._error_codes[code]} for code in codes if code in self._error_codes]
+        unknown = [
+            {"code": code, "close_matches": difflib.get_close_matches(code, list(self._error_codes), n=MAX_CLOSE_MATCHES)}
+            for code in codes
+            if code not in self._error_codes
+        ]
+        return ToolResult.success({"entries": entries, "unknown": unknown})
 
 
 class CalcDowntimeTool(Tool):
