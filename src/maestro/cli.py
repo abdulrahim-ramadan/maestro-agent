@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -12,7 +13,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from maestro.app import CHROMA_DIR, MANUALS_DIR, build_agent
+from maestro.app import CHROMA_DIR, DATA_DIR, MANUALS_DIR, build_agent
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import Agent, StopReason
 from maestro.core.trace import EventKind, TraceEvent
@@ -22,7 +23,9 @@ from maestro.prompts import ReportLanguage, report_task
 from maestro.tools.factory_data import ShiftWindow
 
 MAX_ARGUMENT_CHARS = 70
-SECRET_PATTERN = re.compile(r"sk-[\w*\-]+")
+SECRET_PATTERN = re.compile(r"(?:sk-|gsk_|AIza)[\w*\-]+")
+API_KEY_VARIABLE = "LLM_API_KEY"
+MIN_REDACTED_KEY_CHARS = 8
 DEFAULT_SHIFT_START = "06:00"
 DEFAULT_SHIFT_END = "14:00"
 
@@ -135,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     report = commands.add_parser("report", help="analyze the fault log and write a shift report")
-    report.add_argument("--log", default="data/fault_log.csv", help="path to the fault log CSV")
+    report.add_argument("--log", default=str(DATA_DIR / "fault_log.csv"), help="path to the fault log CSV")
     report.add_argument("--lang", choices=[language.value for language in ReportLanguage], default="en")
     report.add_argument("--out", default="reports", help="directory for the saved report")
     report.add_argument("--shift-start", type=_clock_time, default=DEFAULT_SHIFT_START, help="shift start as HH:MM")
@@ -146,6 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _redact(message: str) -> str:
+    api_key = os.environ.get(API_KEY_VARIABLE, "").strip()
+    if len(api_key) >= MIN_REDACTED_KEY_CHARS:
+        message = message.replace(api_key, "<redacted>")
     return escape(SECRET_PATTERN.sub("<redacted>", message))
 
 

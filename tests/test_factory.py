@@ -241,10 +241,18 @@ def test_night_shift_ends_on_the_next_day() -> None:
     assert shift == ShiftWindow(datetime(2026, 10, 14, 22, 0), datetime(2026, 10, 15, 6, 0))
 
 
-def test_shift_window_falls_back_to_first_event_date() -> None:
-    shift = ShiftWindow.for_events([event("01:00", "01:30")], time(22, 0), time(6, 0))
+def test_night_shift_with_only_events_after_midnight_started_the_day_before() -> None:
+    events = [event("01:00", "01:30"), event("04:10", "04:40")]
 
-    assert shift.start == datetime(2026, 10, 14, 22, 0)
+    shift = ShiftWindow.for_events(events, time(22, 0), time(6, 0))
+
+    assert shift == ShiftWindow(datetime(2026, 10, 13, 22, 0), datetime(2026, 10, 14, 6, 0))
+
+
+def test_shift_window_falls_back_to_first_event_date() -> None:
+    shift = ShiftWindow.for_events([event("04:00", "04:30")], time(6, 0), time(14, 0))
+
+    assert shift == ShiftWindow(datetime(2026, 10, 14, 6, 0), datetime(2026, 10, 14, 14, 0))
 
 
 @pytest.mark.parametrize(
@@ -263,3 +271,51 @@ def test_shift_window_for_log(tmp_path: Path) -> None:
     path = write_log(tmp_path / "fault_log.csv", ROWS)
 
     assert ShiftWindow.for_log(path, time(6, 0), time(14, 0)) == ShiftWindow(SHIFT_START, SHIFT_END)
+
+
+LATE_SHIFT_START = datetime(2026, 10, 14, 14, 0)
+LATE_SHIFT_END = datetime(2026, 10, 14, 22, 0)
+DATA_LOG = Path(__file__).resolve().parent.parent / "data" / "fault_log.csv"
+
+
+def test_repository_only_returns_events_overlapping_the_shift(tmp_path: Path) -> None:
+    repository = FaultLogRepository(write_log(tmp_path / "fault_log.csv", ROWS), LATE_SHIFT_START, LATE_SHIFT_END)
+
+    assert [e.event_id for e in repository.filter()] == ["EV-0006"]
+    assert repository.machine_ids() == ["CNV-01", "PRS-01", "ROB-01"]
+
+
+def test_read_fault_log_uses_only_events_in_the_shift(tmp_path: Path) -> None:
+    repository = FaultLogRepository(write_log(tmp_path / "fault_log.csv", ROWS), LATE_SHIFT_START, LATE_SHIFT_END)
+
+    result = ReadFaultLogTool(repository).run()
+
+    assert [row[0] for row in result.data["events"]] == ["EV-0006"]
+    assert result.data["counts"] == {"info": 0, "warning": 0, "critical": 1}
+    assert result.data["critical_groups"] == [{"machine_id": "CNV-01", "error_code": "E202", "event_ids": ["EV-0006"]}]
+    assert result.data["total"] == 1
+    assert result.data["truncated"] is False
+
+
+def test_truncation_counts_only_events_in_the_shift(tmp_path: Path) -> None:
+    rows = [(f"EV-{n:04d}", "04:00", "04:05", "ROB-01", "E102", "warning", "x") for n in range(1, 46)]
+    rows.append(("EV-0046", "07:00", "07:05", "ROB-01", "E102", "warning", "x"))
+    repository = FaultLogRepository(write_log(tmp_path / "many.csv", rows), SHIFT_START, SHIFT_END)
+
+    result = ReadFaultLogTool(repository).run()
+
+    assert result.data["total"] == 1
+    assert result.data["truncated"] is False
+
+
+def test_late_shift_on_project_log_has_no_events_but_lists_every_machine() -> None:
+    repository = FaultLogRepository(DATA_LOG, LATE_SHIFT_START, LATE_SHIFT_END)
+
+    fault_log = ReadFaultLogTool(repository).run().data
+    downtime = CalcDowntimeTool(repository).run().data["machines"]
+
+    assert fault_log["total"] == 0
+    assert fault_log["events"] == []
+    assert fault_log["critical_groups"] == []
+    assert [machine["machine_id"] for machine in downtime] == ["CNV-01", "PRS-01", "ROB-01", "ROB-02", "SCR-01"]
+    assert all(machine["downtime_minutes"] == 0 for machine in downtime)

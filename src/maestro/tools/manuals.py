@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from maestro.knowledge.store import SearchHit
 from maestro.tools.base import Tool, ToolResult
@@ -28,7 +28,7 @@ class SearchManualsTool(Tool):
         "Returns the best matching manual section per query with source and heading for citation; "
         "a section already returned for an earlier query is not repeated."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "queries": {

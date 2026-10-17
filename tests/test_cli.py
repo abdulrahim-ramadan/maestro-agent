@@ -7,7 +7,7 @@ import httpx
 import openai
 import pytest
 
-from maestro import cli
+from maestro import app, cli
 from maestro.config import ConfigError, Settings
 from maestro.core.agent import AgentResult, StopReason
 from maestro.core.trace import EventKind, Trace
@@ -68,8 +68,7 @@ class FakeAgentFactory:
 @pytest.fixture(autouse=True)
 def run_in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "fault_log.csv").write_text(LOG, encoding="utf-8")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
     (tmp_path / "my_log.csv").write_text(LOG, encoding="utf-8")
     monkeypatch.setattr(Settings, "from_env", classmethod(lambda cls: Settings(api_key="sk-test", model="m", base_url=None)))
 
@@ -95,7 +94,7 @@ def test_report_saves_markdown_and_prints_summary(tmp_path: Path, capsys: pytest
 def test_run_without_final_answer_exits_with_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     factory = FakeAgentFactory(stop_reason=StopReason.MAX_STEPS)
 
-    exit_code = cli.main(["report"], agent_factory=factory)
+    exit_code = cli.main(["report", "--log", "my_log.csv"], agent_factory=factory)
 
     assert exit_code == 1
     assert not (tmp_path / "reports").exists()
@@ -151,7 +150,7 @@ def test_missing_log_prints_message_and_exits_1(capsys: pytest.CaptureFixture[st
 def test_default_shift_is_early_shift_on_log_date() -> None:
     factory = FakeAgentFactory()
 
-    cli.main(["report"], agent_factory=factory)
+    cli.main(["report", "--log", "my_log.csv"], agent_factory=factory)
 
     assert factory.shifts == [ShiftWindow(datetime(2026, 10, 14, 6, 0), datetime(2026, 10, 14, 14, 0))]
     assert "2026-10-14 from 06:00 to 14:00" in factory.agents[0].tasks[0]
@@ -160,7 +159,7 @@ def test_default_shift_is_early_shift_on_log_date() -> None:
 def test_shift_options_reach_repository_and_task() -> None:
     factory = FakeAgentFactory()
 
-    exit_code = cli.main(["report", "--shift-start", "22:00", "--shift-end", "06:00"], agent_factory=factory)
+    exit_code = cli.main(["report", "--log", "my_log.csv", "--shift-start", "22:00", "--shift-end", "06:00"], agent_factory=factory)
 
     assert exit_code == 0
     assert factory.shifts == [ShiftWindow(datetime(2026, 10, 14, 22, 0), datetime(2026, 10, 15, 6, 0))]
@@ -176,7 +175,9 @@ def test_invalid_shift_time_is_rejected(capsys: pytest.CaptureFixture[str]) -> N
 
 
 def test_equal_shift_start_and_end_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
-    exit_code = cli.main(["report", "--shift-start", "06:00", "--shift-end", "06:00"], agent_factory=FakeAgentFactory())
+    exit_code = cli.main(
+        ["report", "--log", "my_log.csv", "--shift-start", "06:00", "--shift-end", "06:00"], agent_factory=FakeAgentFactory()
+    )
 
     assert exit_code == 1
     assert "Invalid shift: shift start and end must differ" in capsys.readouterr().out
@@ -189,3 +190,47 @@ def test_quota_error_prints_message_and_exits_1(capsys: pytest.CaptureFixture[st
     output = " ".join(capsys.readouterr().out.split())
     assert "Quota exhausted:" in output
     assert "daily limit; it asks to try again in 8m50.496s" in output
+
+
+@pytest.mark.parametrize(
+    "secret",
+    ["sk-abc123secret", "gsk_AbCdEf0123456789xyz", "AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUv"],
+)
+def test_api_error_redacts_known_key_formats(secret: str, capsys: pytest.CaptureFixture[str]) -> None:
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    error = openai.APIStatusError(f"Invalid API Key: {secret}", response=httpx.Response(401, request=request), body=None)
+
+    exit_code = cli.main(["report", "--log", "my_log.csv"], agent_factory=FakeAgentFactory(error=error))
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert secret not in output
+    assert "<redacted>" in output
+
+
+def test_api_error_redacts_exact_key_from_environment(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "custom-provider-token-42")
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    error = openai.APIStatusError(
+        "Key custom-provider-token-42 is not valid", response=httpx.Response(401, request=request), body=None
+    )
+
+    cli.main(["report", "--log", "my_log.csv"], agent_factory=FakeAgentFactory(error=error))
+
+    output = capsys.readouterr().out
+    assert "custom-provider-token-42" not in output
+    assert "Key <redacted> is not valid" in output
+
+
+def test_default_log_is_the_project_data_file_from_any_folder() -> None:
+    factory = FakeAgentFactory()
+
+    exit_code = cli.main(["report"], agent_factory=factory)
+
+    assert exit_code == 0
+    assert factory.log_paths == [app.DATA_DIR / "fault_log.csv"]
+    assert factory.log_paths[0].is_absolute()
+
+
+def test_chroma_dir_is_inside_the_project() -> None:
+    assert app.CHROMA_DIR == app.PROJECT_DIR / "chroma_db"

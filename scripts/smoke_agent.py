@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from maestro.config import Settings
 from maestro.core.agent import Agent
@@ -13,7 +13,7 @@ MAX_LINE_CHARS = 100
 class AddNumbersTool(Tool):
     name = "add_numbers"
     description = "Add two numbers and return the sum."
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "a": {"type": "number", "description": "First number"},

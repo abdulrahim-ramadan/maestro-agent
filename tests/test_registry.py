@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -9,7 +9,7 @@ from maestro.tools import Tool, ToolRegistry, ToolResult
 class EchoTool(Tool):
     name = "echo"
     description = "Echo the given text back."
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"text": {"type": "string"}},
         "required": ["text"],
@@ -25,7 +25,7 @@ class EchoTool(Tool):
 class PingTool(Tool):
     name = "ping"
     description = "Answer with pong."
-    parameters = {"type": "object", "properties": {}}
+    parameters: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
 
     def run(self, **kwargs: Any) -> ToolResult:
         return ToolResult.success("pong")

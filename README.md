@@ -61,7 +61,7 @@ flowchart LR
 
 **Every number comes from a tool.** Downtime, availability and event IDs are computed in Python and only copied by the model. The prompt forbids own arithmetic, and `tests/test_report_numbers.py` checks the sample report against `calc_downtime` and `read_fault_log`.
 
-**Tools accept batches.** The model calls one tool per step, so `lookup_error_code` takes a list of codes and `search_manuals` up to five queries. All codes or all queries fit into one step instead of one step each.
+**Tools accept batches.** The model calls one tool per step, so `lookup_error_code` takes a list of codes. `search_manuals` accepts up to 5 queries per call and returns the best matching manual section for each. All codes or all queries fit into one step instead of one step each.
 
 **Errors never stop a run.** A failing tool returns an error result the model can react to. A failing display callback is logged as a warning event and the run continues.
 

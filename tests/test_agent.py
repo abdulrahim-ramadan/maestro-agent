@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -32,7 +32,7 @@ class ScriptedLLM:
 class AddNumbersTool(Tool):
     name = "add_numbers"
     description = "Add two numbers."
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
         "required": ["a", "b"],
@@ -45,7 +45,7 @@ class AddNumbersTool(Tool):
 class BrokenSensorTool(Tool):
     name = "read_sensor"
     description = "Read a sensor value."
-    parameters = {"type": "object", "properties": {}}
+    parameters: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
 
     def run(self, **kwargs: Any) -> ToolResult:
         raise ConnectionError("sensor offline")
@@ -54,7 +54,7 @@ class BrokenSensorTool(Tool):
 class LongReportTool(Tool):
     name = "read_report"
     description = "Return a very long report."
-    parameters = {"type": "object", "properties": {}}
+    parameters: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
 
     def run(self, **kwargs: Any) -> ToolResult:
         return ToolResult.success("x" * 40_000)

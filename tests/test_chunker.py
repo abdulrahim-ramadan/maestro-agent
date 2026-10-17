@@ -1,3 +1,4 @@
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,7 @@ def word_section(word_count: int) -> str:
 def test_consecutive_chunks_overlap() -> None:
     chunks = MarkdownChunker(max_chars=300, overlap=60).chunk_text(word_section(400), source="words")
 
-    for previous, current in zip(chunks, chunks[1:]):
+    for previous, current in pairwise(chunks):
         previous_words = previous.text.split()
         current_words = current.text.split()
         shared = previous_words[previous_words.index(current_words[0]) :]

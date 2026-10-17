@@ -65,12 +65,15 @@ class ShiftWindow:
         event_starts = sorted(event.start_time for event in events)
         if not event_starts:
             raise ValueError("the fault log has no events to date the shift")
-        starts_in_shift = [start for start in event_starts if start.time() >= start_time]
-        shift_date = (starts_in_shift or event_starts)[0].date()
+        crosses_midnight = end_time < start_time
+        shift_dates = [
+            event_start.date() - timedelta(days=1) if crosses_midnight and event_start.time() < end_time else event_start.date()
+            for event_start in event_starts
+            if event_start.time() >= start_time or (crosses_midnight and event_start.time() < end_time)
+        ]
+        shift_date = shift_dates[0] if shift_dates else event_starts[0].date()
         start = datetime.combine(shift_date, start_time)
-        end = datetime.combine(shift_date, end_time)
-        if end < start:
-            end += timedelta(days=1)
+        end = datetime.combine(shift_date + timedelta(days=1) if crosses_midnight else shift_date, end_time)
         return cls(start, end)
 
     @classmethod
@@ -82,7 +85,9 @@ class FaultLogRepository:
     def __init__(self, csv_path: str | Path, shift_start: datetime, shift_end: datetime) -> None:
         self.shift_start = shift_start
         self.shift_end = shift_end
-        self._events = load_fault_events(csv_path)
+        all_events = load_fault_events(csv_path)
+        self._machine_ids = sorted({event.machine_id for event in all_events})
+        self._events = [event for event in all_events if event.end_time > shift_start and event.start_time < shift_end]
 
     def filter(self, machine_id: str | None = None, severity: Severity | None = None) -> list[FaultEvent]:
         return [
@@ -93,7 +98,7 @@ class FaultLogRepository:
         ]
 
     def machine_ids(self) -> list[str]:
-        return sorted({event.machine_id for event in self._events})
+        return list(self._machine_ids)
 
 
 def load_error_codes(json_path: str | Path) -> dict[str, dict[str, str]]:

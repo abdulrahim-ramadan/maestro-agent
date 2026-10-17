@@ -1,5 +1,5 @@
 import difflib
-from typing import Any
+from typing import Any, ClassVar
 
 from maestro.tools.base import Tool, ToolResult
 from maestro.tools.factory_data import EVENT_COLUMNS, FaultEvent, FaultLogRepository, Severity, downtime_minutes
@@ -30,7 +30,7 @@ class ReadFaultLogTool(Tool):
         "Each event is a row in the order given by columns; "
         "critical_groups lists the critical event IDs per machine and error code."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "machine_id": {"type": ["string", "null"], "description": "Machine ID, for example ROB-01; null for all machines"},
@@ -72,7 +72,7 @@ class LookupErrorCodeTool(Tool):
         "Look up one or more error codes in one call: title, category, likely cause and severity. "
         "Pass every code you need at once."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "codes": {
@@ -109,7 +109,7 @@ class CalcDowntimeTool(Tool):
         "Calculate downtime minutes and availability percent per machine for the current shift. "
         "Overlapping faults are counted once."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"machine_id": {"type": ["string", "null"], "description": "Machine ID; omit or null for all machines"}},
     }

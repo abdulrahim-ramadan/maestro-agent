@@ -56,7 +56,7 @@ class ManualStore:
         )
         return [
             SearchHit(text=text, source=str(metadata["source"]), heading=str(metadata["heading"]), score=round(1 - distance, 4))
-            for text, metadata, distance in zip(result["documents"][0], result["metadatas"][0], result["distances"][0])
+            for text, metadata, distance in zip(result["documents"][0], result["metadatas"][0], result["distances"][0], strict=True)
         ]
 
     def is_empty(self) -> bool:

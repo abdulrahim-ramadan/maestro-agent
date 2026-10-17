@@ -16,7 +16,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_DIR / "data"
 MANUALS_DIR = DATA_DIR / "manuals"
 ERROR_CODES_PATH = DATA_DIR / "error_codes.json"
-CHROMA_DIR = Path("chroma_db")
+CHROMA_DIR = PROJECT_DIR / "chroma_db"
 
 
 def build_registry(

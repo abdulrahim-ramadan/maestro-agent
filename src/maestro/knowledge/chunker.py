@@ -41,7 +41,7 @@ class MarkdownChunker:
         matches = list(HEADING_PATTERN.finditer(text))
         boundaries = [0, *(match.start() for match in matches), len(text)]
         headings = ["", *(match.group(1) for match in matches)]
-        sections = [(heading, text[start:end].strip()) for heading, start, end in zip(headings, boundaries, boundaries[1:])]
+        sections = [(heading, text[start:end].strip()) for heading, start, end in zip(headings, boundaries[:-1], boundaries[1:], strict=True)]
         return [(heading, section) for heading, section in sections if section]
 
     def _split_by_size(self, section: str) -> list[str]:
