@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="Maestro Agent logo" width="120">
+  <img src="docs/logo.png" alt="Maestro Agent logo" width="120">
 </p>
 
 <h1 align="center">Maestro Agent</h1>
