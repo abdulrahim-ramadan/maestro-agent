@@ -129,7 +129,7 @@ def test_german_run_shows_german_steps_report_chart_and_download() -> None:
     text = markdown_text(page)
     assert "All machines checked." in text
     assert "Schritt 1 **calc_downtime**" in text
-    assert "Warte 12 s wegen des Ratenlimits (Token-Taktung)" in text
+    assert "Warte 12 s wegen des Ratenlimits (Token-Limit pro Minute)" in text
     assert page.get("arrow_vega_lite_chart") or page.get("vega_lite_chart")
     assert page.get("download_button")
 

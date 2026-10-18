@@ -167,7 +167,7 @@ def test_wait_notices_appear_between_steps() -> None:
     tracker.on_wait(11.6, "token pacing")
 
     assert tracker.to_markdown(EN) == "⏳ step 1 **read_fault_log** `{}`\n\n🕒 waiting 12 s for the rate limit (token pacing)"
-    assert tracker.to_markdown(DE) == "⏳ Schritt 1 **read_fault_log** `{}`\n\n🕒 Warte 12 s wegen des Ratenlimits (Token-Taktung)"
+    assert tracker.to_markdown(DE) == "⏳ Schritt 1 **read_fault_log** `{}`\n\n🕒 Warte 12 s wegen des Ratenlimits (Token-Limit pro Minute)"
     assert [row.tool for row in tracker.rows] == ["read_fault_log"]
 
 

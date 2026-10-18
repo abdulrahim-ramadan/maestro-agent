@@ -59,7 +59,7 @@ def test_placeholders_match_in_both_languages(key: Text) -> None:
 @pytest.mark.parametrize(
     "lang, expected",
     [
-        (ReportLanguage.GERMAN, "🕒 Warte 12 s wegen des Ratenlimits (Token-Taktung)"),
+        (ReportLanguage.GERMAN, "🕒 Warte 12 s wegen des Ratenlimits (Token-Limit pro Minute)"),
         (ReportLanguage.ENGLISH, "🕒 waiting 12 s for the rate limit (token pacing)"),
     ],
 )
@@ -109,6 +109,9 @@ def test_toggle_label_options_and_default() -> None:
         (Text.TECHNICAL_DETAILS, "Technische Details"),
         (Text.DOWNLOAD_REPORT, "Bericht herunterladen"),
         (Text.QUOTA_NOTE, "Im kostenlosen Tarif sind etwa 5 Berichte pro Tag möglich."),
+        (Text.WAIT_REASON_PACING, "Token-Limit pro Minute"),
+        (Text.WAIT_REASON_RETRY_HINT, "Wartezeit laut KI-Dienst"),
+        (Text.RUN_STOPPED, "Die Berichterstellung wurde ohne Ergebnis beendet: {answer}"),
     ],
 )
 def test_german_glossary(key: Text, german: str) -> None:
