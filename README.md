@@ -98,6 +98,10 @@ maestro ui
 
 A bilingual Streamlit page, German by default: the "Sprache / Language" toggle at the top of the sidebar switches the whole interface and the report language between Deutsch and English. It offers fault log upload (or the sample data) and shift presets. It shows the agent steps live, streams the report, then renders it with a downtime chart and a download button. Each report uses about 35k tokens of the provider's daily quota.
 
+![Maestro web interface in German](docs/ui.png)
+
+[Demo video (sped up)](docs/maestro-demo.mp4)
+
 ## For shift leads
 
 1. Double-click `start_maestro.bat` in the Maestro folder. Your browser opens Maestro after a few seconds; keep the black window open while you work.
