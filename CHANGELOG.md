@@ -6,4 +6,4 @@
 - Empty shift warning with confirmation
 - Request pacing under the tokens-per-minute limit, friendly wait and error messages
 - German reports: chart from zero, German number format, Stillstand wording, translated fault titles, welding terms
-- 344 tests, ruff clean
+- More than 330 tests, ruff clean
