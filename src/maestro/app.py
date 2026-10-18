@@ -6,7 +6,8 @@ from maestro.core.agent import Agent
 from maestro.core.trace import TraceEvent
 from maestro.knowledge.store import ManualStore
 from maestro.llm.client import LLMClient, OnWait
-from maestro.prompts import SYSTEM_PROMPT
+from maestro.prompts import ReportLanguage, system_prompt
+from maestro.report_format import ReportFormatter
 from maestro.tools import ToolRegistry
 from maestro.tools.factory import (
     CalcDowntimeTool,
@@ -27,12 +28,14 @@ def build_registry(
     repository: FaultLogRepository,
     error_codes: dict[str, dict[str, str]],
     manual_searcher: ManualSearcher,
+    formatter: ReportFormatter | None = None,
 ) -> ToolRegistry:
+    formatter = formatter or ReportFormatter()
     registry = ToolRegistry()
-    registry.register(ReadFaultLogTool(repository))
+    registry.register(ReadFaultLogTool(repository, formatter))
     registry.register(LookupErrorCodeTool(error_codes))
     registry.register(SearchManualsTool(manual_searcher))
-    registry.register(CalcDowntimeTool(repository))
+    registry.register(CalcDowntimeTool(repository, formatter))
     return registry
 
 
@@ -50,7 +53,16 @@ def build_agent(
     on_token: Callable[[str], None] | None = None,
     on_event: Callable[[TraceEvent], None] | None = None,
     on_wait: OnWait | None = None,
+    language: ReportLanguage = ReportLanguage.ENGLISH,
 ) -> Agent:
     repository = FaultLogRepository(log_path, shift.start, shift.end)
-    registry = build_registry(repository, load_error_codes(ERROR_CODES_PATH), open_manual_store())
-    return Agent(LLMClient(settings, on_wait=on_wait), registry, SYSTEM_PROMPT, settings.max_steps, on_token=on_token, on_event=on_event)
+    formatter = ReportFormatter(language)
+    registry = build_registry(repository, load_error_codes(ERROR_CODES_PATH), open_manual_store(), formatter)
+    return Agent(
+        LLMClient(settings, on_wait=on_wait),
+        registry,
+        system_prompt(language),
+        settings.max_steps,
+        on_token=on_token,
+        on_event=on_event,
+    )

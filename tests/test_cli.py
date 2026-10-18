@@ -67,6 +67,7 @@ class FakeAgentFactory:
         on_token: Any = None,
         on_event: Any = None,
         on_wait: Any = None,
+        language: Any = None,
     ) -> FakeAgent:
         self.log_paths.append(log_path)
         self.shifts.append(shift)

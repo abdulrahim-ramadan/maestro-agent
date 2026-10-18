@@ -94,7 +94,13 @@ def run_report(args: argparse.Namespace, console: Console, agent_factory: AgentF
     language = ReportLanguage(args.lang)
     view = LiveStepView(console)
     agent = agent_factory(
-        Settings.from_env(), log_path, shift, on_token=view.on_token, on_event=view.on_event, on_wait=view.on_wait
+        Settings.from_env(),
+        log_path,
+        shift,
+        on_token=view.on_token,
+        on_event=view.on_event,
+        on_wait=view.on_wait,
+        language=language,
     )
     console.print(f"[bold]Shift report[/bold] {shift.start:%Y-%m-%d %H:%M} to {shift.end:%Y-%m-%d %H:%M}, language: {language.value}")
 

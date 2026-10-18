@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -44,7 +45,13 @@ class FakeAgent:
 
 
 def fake_build_agent(
-    settings: Settings, log_path: Path, shift: Any, on_token: Any = None, on_event: Any = None, on_wait: Any = None
+    settings: Settings,
+    log_path: Path,
+    shift: Any,
+    on_token: Any = None,
+    on_event: Any = None,
+    on_wait: Any = None,
+    language: Any = None,
 ) -> FakeAgent:
     return FakeAgent(on_token, on_event, on_wait)
 
@@ -209,3 +216,14 @@ def test_rate_limit_error_shows_german_sentence_and_collapsed_details() -> None:
     assert page.error[0].value == "Das Limit des KI-Dienstes ist erreicht. Bitte eine Minute warten und erneut versuchen."
     assert "Technische Details" in [expander.label for expander in page.expander]
     assert any("tokens per minute" in code.value for code in page.code)
+
+
+def test_rendered_downtime_chart_starts_at_zero_with_german_titles() -> None:
+    page = generate(choose_sample_data())
+
+    chart = (page.get("arrow_vega_lite_chart") or page.get("vega_lite_chart"))[0]
+    spec = json.loads(chart.proto.spec)
+    assert spec["mark"]["type"] == "bar"
+    assert spec["encoding"]["y"]["scale"] == {"zero": True, "domainMin": 0}
+    assert spec["encoding"]["x"]["title"] == "Maschine"
+    assert spec["encoding"]["y"]["title"] == "Stillstand (min)"

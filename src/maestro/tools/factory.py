@@ -1,6 +1,7 @@
 import difflib
 from typing import Any, ClassVar
 
+from maestro.report_format import ReportFormatter
 from maestro.tools.base import Tool, ToolResult
 from maestro.tools.factory_data import (
     EVENT_COLUMNS,
@@ -34,7 +35,8 @@ class ReadFaultLogTool(Tool):
     description = (
         "Read fault events of the current shift, optionally filtered by machine and severity. "
         "Each event is a row in the order given by columns; "
-        "critical_groups lists the critical event IDs per machine and error code."
+        "critical_groups lists the critical event IDs per machine and error code. "
+        "Times are formatted for the report language."
     )
     parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -44,8 +46,9 @@ class ReadFaultLogTool(Tool):
         },
     }
 
-    def __init__(self, repository: FaultLogRepository) -> None:
+    def __init__(self, repository: FaultLogRepository, formatter: ReportFormatter | None = None) -> None:
         self._repository = repository
+        self._formatter = formatter or ReportFormatter()
 
     def run(self, **kwargs: Any) -> ToolResult:
         machine_id = kwargs.get("machine_id")
@@ -63,7 +66,7 @@ class ReadFaultLogTool(Tool):
         return ToolResult.success(
             {
                 "columns": EVENT_COLUMNS,
-                "events": [event.to_row() for event in events[:MAX_EVENTS]],
+                "events": [event.to_row(self._formatter.timestamp) for event in events[:MAX_EVENTS]],
                 "counts": counts,
                 "critical_groups": _critical_groups(events),
                 "total": len(events),
@@ -112,16 +115,17 @@ class LookupErrorCodeTool(Tool):
 class CalcDowntimeTool(Tool):
     name = "calc_downtime"
     description = (
-        "Calculate downtime minutes and availability percent per machine for the current shift. "
-        "Overlapping faults are counted once."
+        "Calculate downtime minutes and availability percent per machine and the total downtime for the current shift. "
+        "Overlapping faults are counted once. The *_text fields are formatted for the report language."
     )
     parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"machine_id": {"type": ["string", "null"], "description": "Machine ID; omit or null for all machines"}},
     }
 
-    def __init__(self, repository: FaultLogRepository) -> None:
+    def __init__(self, repository: FaultLogRepository, formatter: ReportFormatter | None = None) -> None:
         self._repository = repository
+        self._formatter = formatter or ReportFormatter()
 
     def run(self, **kwargs: Any) -> ToolResult:
         machine_id = kwargs.get("machine_id")
@@ -132,13 +136,25 @@ class CalcDowntimeTool(Tool):
         shift_minutes = (shift_end - shift_start).total_seconds() / 60
         machine_ids = [machine_id] if machine_id is not None else self._repository.machine_ids()
         machines = []
+        total_downtime = 0.0
         for current_id in machine_ids:
-            downtime = downtime_minutes(self._repository.filter(machine_id=current_id), shift_start, shift_end)
+            downtime = round(downtime_minutes(self._repository.filter(machine_id=current_id), shift_start, shift_end), 1)
+            availability = round((shift_minutes - downtime) / shift_minutes * 100, 1)
+            total_downtime += downtime
             machines.append(
                 {
                     "machine_id": current_id,
-                    "downtime_minutes": round(downtime, 1),
-                    "availability_percent": round((shift_minutes - downtime) / shift_minutes * 100, 1),
+                    "downtime_minutes": downtime,
+                    "downtime_text": self._formatter.number(downtime),
+                    "availability_percent": availability,
+                    "availability_text": self._formatter.number(availability),
                 }
             )
-        return ToolResult.success({"machines": machines})
+        total_downtime = round(total_downtime, 1)
+        return ToolResult.success(
+            {
+                "machines": machines,
+                "total_downtime_minutes": total_downtime,
+                "total_downtime_text": self._formatter.number(total_downtime),
+            }
+        )

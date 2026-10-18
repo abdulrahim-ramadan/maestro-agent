@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from maestro.prompts import ReportLanguage
+from maestro.report_format import ReportFormatter
 from maestro.tools import ToolRegistry
 from maestro.tools.factory import (
     CalcDowntimeTool,
@@ -90,15 +92,37 @@ def test_availability_math(repository: FaultLogRepository) -> None:
 
     machines = {machine["machine_id"]: machine for machine in result.data["machines"]}
     assert result.ok
-    assert machines["ROB-01"] == {"machine_id": "ROB-01", "downtime_minutes": 48.0, "availability_percent": 90.0}
-    assert machines["PRS-01"] == {"machine_id": "PRS-01", "downtime_minutes": 25.0, "availability_percent": 94.8}
-    assert machines["CNV-01"] == {"machine_id": "CNV-01", "downtime_minutes": 10.0, "availability_percent": 97.9}
+    assert machines["ROB-01"] == {
+        "machine_id": "ROB-01",
+        "downtime_minutes": 48.0,
+        "downtime_text": "48.0",
+        "availability_percent": 90.0,
+        "availability_text": "90.0",
+    }
+    assert machines["PRS-01"]["downtime_minutes"] == 25.0
+    assert machines["PRS-01"]["availability_percent"] == 94.8
+    assert machines["CNV-01"]["downtime_minutes"] == 10.0
+    assert machines["CNV-01"]["availability_percent"] == 97.9
+    assert result.data["total_downtime_minutes"] == 83.0
+    assert result.data["total_downtime_text"] == "83.0"
 
 
 def test_calc_downtime_for_one_machine(repository: FaultLogRepository) -> None:
     result = CalcDowntimeTool(repository).run(machine_id="PRS-01")
 
-    assert result.data == {"machines": [{"machine_id": "PRS-01", "downtime_minutes": 25.0, "availability_percent": 94.8}]}
+    assert result.data == {
+        "machines": [
+            {
+                "machine_id": "PRS-01",
+                "downtime_minutes": 25.0,
+                "downtime_text": "25.0",
+                "availability_percent": 94.8,
+                "availability_text": "94.8",
+            }
+        ],
+        "total_downtime_minutes": 25.0,
+        "total_downtime_text": "25.0",
+    }
 
 
 def test_repository_filters(repository: FaultLogRepository) -> None:
@@ -325,3 +349,28 @@ def test_late_shift_on_project_log_has_no_events_but_lists_every_machine() -> No
     assert fault_log["critical_groups"] == []
     assert [machine["machine_id"] for machine in downtime] == ["CNV-01", "PRS-01", "ROB-01", "ROB-02", "SCR-01"]
     assert all(machine["downtime_minutes"] == 0 for machine in downtime)
+
+
+def test_calc_downtime_formats_text_fields_for_german(repository: FaultLogRepository) -> None:
+    result = CalcDowntimeTool(repository, ReportFormatter(ReportLanguage.GERMAN)).run()
+
+    machines = {machine["machine_id"]: machine for machine in result.data["machines"]}
+    assert (machines["ROB-01"]["downtime_text"], machines["ROB-01"]["availability_text"]) == ("48", "90")
+    assert (machines["PRS-01"]["downtime_text"], machines["PRS-01"]["availability_text"]) == ("25", "94,8")
+    assert machines["PRS-01"]["downtime_minutes"] == 25.0
+    assert result.data["total_downtime_text"] == "83"
+
+
+def test_calc_downtime_total_on_project_log() -> None:
+    shift = ShiftWindow.for_log(DATA_LOG, time(6, 0), time(14, 0))
+    result = CalcDowntimeTool(FaultLogRepository(DATA_LOG, shift.start, shift.end), ReportFormatter(ReportLanguage.GERMAN)).run()
+
+    assert result.data["total_downtime_minutes"] == 311.0
+    assert result.data["total_downtime_text"] == "311"
+    assert sum(machine["downtime_minutes"] for machine in result.data["machines"]) == 311.0
+
+
+def test_read_fault_log_uses_german_timestamps(repository: FaultLogRepository) -> None:
+    result = ReadFaultLogTool(repository, ReportFormatter(ReportLanguage.GERMAN)).run(machine_id="PRS-01")
+
+    assert result.data["events"][0][1:3] == ["14.10.2026 05:40", "14.10.2026 06:25"]

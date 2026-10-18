@@ -39,11 +39,11 @@ class FaultEvent:
     message: str
     is_open: bool = False
 
-    def to_row(self) -> list[str | bool]:
+    def to_row(self, format_timestamp: Callable[[datetime], str]) -> list[str | bool]:
         return [
             self.event_id,
-            f"{self.start_time:%Y-%m-%d %H:%M}",
-            "" if self.end_time is None else f"{self.end_time:%Y-%m-%d %H:%M}",
+            format_timestamp(self.start_time),
+            "" if self.end_time is None else format_timestamp(self.end_time),
             self.machine_id,
             self.error_code,
             self.severity.value,

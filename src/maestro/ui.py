@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, time
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 from maestro.app import DATA_DIR, PROJECT_DIR, build_agent
+from maestro.charts import downtime_bar_spec
 from maestro.config import Settings
 from maestro.core.agent import StopReason
 from maestro.core.trace import TraceEvent
@@ -189,7 +189,15 @@ def run_report(selection: Selection) -> ReportOutcome:
     with fault_log_file(selection.log_bytes) as log_path:
         try:
             shift = ShiftWindow.for_log(log_path, selection.shift_start, selection.shift_end)
-            agent = build_agent(Settings.from_env(), log_path, shift, on_token=on_token, on_event=on_event, on_wait=on_wait)
+            agent = build_agent(
+                Settings.from_env(),
+                log_path,
+                shift,
+                on_token=on_token,
+                on_event=on_event,
+                on_wait=on_wait,
+                language=lang,
+            )
             result = agent.run(report_task(lang, shift.start, shift.end))
             downtime = downtime_by_machine(log_path, shift)
         # The page shows every failure as a message, never a traceback.
@@ -219,11 +227,8 @@ def render_outcome(outcome: ReportOutcome, lang: ReportLanguage) -> None:
         return
     st.markdown(outcome.report)
     st.subheader(t(Text.DOWNTIME_PER_MACHINE, lang))
-    machine_label, minutes_label = t(Text.MACHINE, lang), t(Text.DOWNTIME_MINUTES, lang)
-    chart_data = pd.DataFrame(
-        {minutes_label: list(outcome.downtime.values())}, index=pd.Index(list(outcome.downtime), name=machine_label)
-    )
-    st.bar_chart(chart_data, x_label=machine_label, y_label=minutes_label, color=CHART_COLOR)
+    spec = downtime_bar_spec(outcome.downtime, t(Text.MACHINE, lang), t(Text.DOWNTIME_MINUTES, lang), CHART_COLOR)
+    st.vega_lite_chart(spec=spec, width="stretch")
     st.download_button(
         t(Text.DOWNLOAD_REPORT, lang),
         data=outcome.report,
