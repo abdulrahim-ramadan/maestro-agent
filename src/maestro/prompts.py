@@ -43,6 +43,9 @@ LANGUAGE_RULES = {
         "\"Hydraulikdruck niedrig (Hydraulic pressure low)\".\n"
         "- Write dates and times exactly as in the read_fault_log rows, for example 14.10.2026 05:40.\n"
         "- Never use vague phrases such as \"mehrere Stunden\".\n"
+        "- German terminology: a welding torch is \"Brenner\", so \"Torch collision\" is \"Brennerkollision\"; "
+        "never write \"Fackel\". \"Misaligned\" is \"falsch ausgerichtet\". "
+        "\"Schicht\" is feminine: \"die Schicht\", \"in der Schicht\".\n"
     ),
 }
 

@@ -84,3 +84,16 @@ def test_report_task_names_shift_and_language(language: ReportLanguage, shift_te
 
     assert shift_text in task
     assert task.endswith(f"Report language: {name}.")
+
+
+GERMAN_TERMS = ['"Brenner"', '"Brennerkollision"', 'never write "Fackel"', '"falsch ausgerichtet"', '"die Schicht"', "feminine"]
+
+
+@pytest.mark.parametrize("term", GERMAN_TERMS)
+def test_german_prompt_has_welding_terminology(term: str) -> None:
+    assert term in system_prompt(DE)
+
+
+@pytest.mark.parametrize("term", GERMAN_TERMS)
+def test_english_prompt_has_no_german_terminology(term: str) -> None:
+    assert term not in system_prompt(EN)
